@@ -1,0 +1,32 @@
+@import 'tailwindcss';
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+}
+
+body {
+  font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+kbd {
+  border-radius: 3px;
+  background: rgb(255 255 255 / 0.08);
+  padding: 1px 4px;
+  font-family: ui-monospace, monospace;
+  font-size: 10px;
+}
+
+canvas {
+  cursor: crosshair;
+  display: block;
+  /* R3F sizes the wrapper divs but leaves the canvas element itself at its
+     intrinsic 300x150 unless CSS stretches it. Without this the viewport
+     renders into a postage stamp in the corner. */
+  width: 100%;
+  height: 100%;
+}
