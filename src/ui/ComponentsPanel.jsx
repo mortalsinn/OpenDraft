@@ -10,13 +10,14 @@ import { definitionUsage } from '../core/components.js'
 export default function ComponentsPanel() {
   const doc = useDraft((s) => s.doc)
   const selection = useDraft((s) => s.selection)
+  const primary = useDraft((s) => s.primary)()
   const makeComponentFromSelection = useDraft((s) => s.makeComponentFromSelection)
   const setPendingDefinition = useDraft((s) => s.setPendingDefinition)
   const pendingDefinition = useDraft((s) => s.pendingDefinition)
 
   const definitions = Object.values(doc.definitions ?? {})
   const usage = definitionUsage(doc)
-  const selected = selection ? doc.nodes[selection] : null
+  const selected = primary ? doc.nodes[primary] : null
   const canMake = selected && selected.type !== 'componentInstance'
 
   return (

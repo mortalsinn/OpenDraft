@@ -101,6 +101,7 @@ function PointerBridge() {
 
     const onMove = (event) => {
       const state = useDraft.getState()
+      if (event.shiftKey !== state.additive) state.setAdditive(event.shiftKey)
 
       // A push/pull in progress owns the pointer; inference would only fight it.
       if (state.pushPull) {
@@ -142,6 +143,12 @@ function PointerBridge() {
 
       if (state.tool === 'move' && state.snap) {
         state.beginMove(state.snap.point, state.snap.refs)
+        return
+      }
+
+      // Dragging on empty space with the select tool starts a selection box.
+      if (state.tool === 'select' && state.snap && !state.snap.refs.length) {
+        state.beginBox(state.snap.point)
       }
     }
 
@@ -149,6 +156,7 @@ function PointerBridge() {
       const state = useDraft.getState()
       if (state.pushPull) state.endPushPull()
       if (state.moving) state.endMove()
+      if (state.boxFrom && state.snap) state.endBox(state.snap.point)
     }
 
     const onClick = (event) => {
@@ -328,6 +336,7 @@ function NodeView({ doc, node, selected }) {
 function Geometry() {
   const doc = useDraft((s) => s.doc)
   const selection = useDraft((s) => s.selection)
+  const selected = useMemo(() => new Set(selection), [selection])
 
   // Hidden layers drop out of the scene entirely. They stay in the document,
   // and — deliberately — stay in the takeoff.
@@ -337,7 +346,7 @@ function Geometry() {
   )
 
   return nodes.map((node) => (
-    <NodeView key={node.id} doc={doc} node={node} selected={node.id === selection} />
+    <NodeView key={node.id} doc={doc} node={node} selected={selected.has(node.id)} />
   ))
 }
 
@@ -365,6 +374,40 @@ function ShapePreview() {
       color={snap.color}
       lineWidth={2}
       dashed
+      dashSize={4}
+      gapSize={3}
+    />
+  )
+}
+
+/**
+ * The selection box being dragged.
+ *
+ * Dashed for a crossing selection and solid for a window, so which one you are
+ * about to get is visible before you release rather than after.
+ */
+function SelectionBox() {
+  const boxFrom = useDraft((s) => s.boxFrom)
+  const snap = useDraft((s) => s.snap)
+
+  if (!boxFrom || !snap) return null
+
+  const to = snap.point
+  const crossing = to.x < boxFrom.x
+  const corners = [
+    [boxFrom.x, boxFrom.y, 0],
+    [to.x, boxFrom.y, 0],
+    [to.x, to.y, 0],
+    [boxFrom.x, to.y, 0],
+    [boxFrom.x, boxFrom.y, 0],
+  ]
+
+  return (
+    <Line
+      points={corners}
+      color={crossing ? '#22c55e' : '#38bdf8'}
+      lineWidth={1.5}
+      dashed={crossing}
       dashSize={4}
       gapSize={3}
     />
@@ -476,6 +519,7 @@ export default function Viewport() {
         <Geometry />
         <RubberBand />
         <ShapePreview />
+        <SelectionBox />
         <PointerBridge />
         <OrbitControls
           makeDefault

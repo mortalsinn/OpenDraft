@@ -20,6 +20,7 @@ export default function App() {
   const setTool = useDraft((s) => s.setTool)
   const snap = useDraft((s) => s.snap)
   const lockedAxis = useDraft((s) => s.lockedAxis)
+  const selectionCount = useDraft((s) => s.selection.length)
   const undo = useDraft((s) => s.undo)
   const past = useDraft((s) => s.past)
   const newDocument = useDraft((s) => s.newDocument)
@@ -136,6 +137,11 @@ export default function App() {
         </button>
 
         <div className="ml-auto flex items-center gap-3 text-xs text-slate-500">
+          {selectionCount > 1 && (
+            <span className="rounded bg-sky-500/15 px-2 py-0.5 font-medium text-sky-300">
+              {selectionCount} selected
+            </span>
+          )}
           {lockedAxis && (
             <span className="rounded bg-amber-500/15 px-2 py-0.5 font-medium text-amber-300">
               Locked: {lockedAxis.replace('axis', '')}
@@ -144,7 +150,8 @@ export default function App() {
           <span>
             {tool === 'line' &&
               'Click to draw · type a length · Enter · Esc cancels · arrows lock an axis'}
-            {tool === 'select' && 'Click a line to select it, then edit or promote it on the right'}
+            {tool === 'select' &&
+              'Click to select · shift adds · drag right for a window, left to cross · Ctrl+C/V/D/A'}
             {tool === 'move' &&
               'Drag a corner to move it, or anywhere else on an object to move the whole thing'}
             {tool === 'pushpull' &&

@@ -12,6 +12,7 @@ import { parseLength, formatLength } from '../core/units.js'
  */
 export default function TransformPanel() {
   const selection = useDraft((s) => s.selection)
+  const primary = useDraft((s) => s.primary)()
   const doc = useDraft((s) => s.doc)
   const transform = useDraft((s) => s.transformSelection)
 
@@ -22,7 +23,7 @@ export default function TransformPanel() {
   const [spacing, setSpacing] = useState('16"')
   const [polarCount, setPolarCount] = useState('6')
 
-  const node = selection ? doc.nodes[selection] : null
+  const node = primary ? doc.nodes[primary] : null
   const disabled = !node
 
   const degrees = (value) => (Number(value) * Math.PI) / 180

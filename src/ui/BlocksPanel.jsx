@@ -12,13 +12,14 @@ import { parseLength, formatLength } from '../core/units.js'
 export default function BlocksPanel() {
   const doc = useDraft((s) => s.doc)
   const selection = useDraft((s) => s.selection)
+  const primary = useDraft((s) => s.primary)()
   const pendingBlock = useDraft((s) => s.pendingBlock)
   const blockAttributes = useDraft((s) => s.blockAttributes)
   const armBlock = useDraft((s) => s.armBlock)
   const setBlockAttribute = useDraft((s) => s.setBlockAttribute)
   const setPlacedAttribute = useDraft((s) => s.setPlacedAttribute)
 
-  const placed = selection ? doc.nodes[selection] : null
+  const placed = primary ? doc.nodes[primary] : null
   const editingPlaced = placed?.type === 'blockInstance'
 
   // Editing a placed symbol takes precedence over the one armed for insertion.

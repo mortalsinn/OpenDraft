@@ -55,14 +55,47 @@ export default function ValueBox() {
         return
       }
 
-      if (event.key === 'Enter') {
-        commitTyped()
+      if (meta && event.key.toLowerCase() === 'c') {
+        useDraft.getState().copySelection()
         return
       }
 
-      if (event.key === 'Backspace') {
+      if (meta && event.key.toLowerCase() === 'v') {
         event.preventDefault()
-        setTyped(useDraft.getState().typed.slice(0, -1))
+        useDraft.getState().pasteClipboard()
+        return
+      }
+
+      if (meta && event.key.toLowerCase() === 'd') {
+        event.preventDefault()
+        useDraft.getState().duplicateSelection()
+        return
+      }
+
+      if (meta && event.key.toLowerCase() === 'a') {
+        event.preventDefault()
+        const { doc, selectMany } = useDraft.getState()
+        selectMany(Object.keys(doc.nodes))
+        return
+      }
+
+      if (event.key === 'Delete' || event.key === 'Backspace') {
+        // Backspace only deletes when nothing is being typed — otherwise it is
+        // correcting the value box, which matters more.
+        if (event.key === 'Backspace' && useDraft.getState().typed) {
+          event.preventDefault()
+          setTyped(useDraft.getState().typed.slice(0, -1))
+          return
+        }
+        if (useDraft.getState().selection.length) {
+          event.preventDefault()
+          useDraft.getState().deleteSelection()
+          return
+        }
+      }
+
+      if (event.key === 'Enter') {
+        commitTyped()
         return
       }
 

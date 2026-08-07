@@ -18,12 +18,13 @@ import { formatLength, parseLength } from '../core/units.js'
 export default function Inspector() {
   const doc = useDraft((s) => s.doc)
   const selection = useDraft((s) => s.selection)
+  const primary = useDraft((s) => s.primary)()
   const promote = useDraft((s) => s.promoteSelection)
   const edit = useDraft((s) => s.editSelection)
   const remove = useDraft((s) => s.deleteSelection)
   const setNoteText = useDraft((s) => s.setNoteText)
 
-  const node = selection ? doc.nodes[selection] : null
+  const node = primary ? doc.nodes[primary] : null
 
   if (!node) {
     return (

@@ -435,24 +435,36 @@ export function translateNode(doc, id, delta) {
 export function duplicateNode(doc, id, offset = { x: 0, y: 0, z: 0 }) {
   const node = doc.nodes[id]
   if (!node) return { doc, id: null }
+  return insertCopy(doc, node, offset)
+}
+
+/**
+ * Insert a copy of a node object under a fresh id.
+ *
+ * Takes the NODE rather than an id, so the clipboard can paste something whose
+ * original has since been deleted.
+ */
+export function insertCopy(doc, node, offset = { x: 0, y: 0, z: 0 }) {
+  if (!node) return { doc, id: null }
 
   const newId = makeId(node.type === 'edge' ? 'e' : 'n')
-  const moved = withVertices(
-    node,
-    nodeVertices(node).map((vertex) => ({
-      x: vertex.x + offset.x,
-      y: vertex.y + offset.y,
-      z: (vertex.z ?? 0) + (offset.z ?? 0),
-    })),
-  )
+  const shift = (point) => ({
+    x: point.x + offset.x,
+    y: point.y + offset.y,
+    z: (point.z ?? 0) + (offset.z ?? 0),
+  })
 
-  // Curves keep their geometry in `centre`, which is not a vertex.
-  const placed = moved.centre
-    ? { ...moved, centre: { x: moved.centre.x + offset.x, y: moved.centre.y + offset.y, z: moved.centre.z ?? 0 } }
-    : moved
+  let placed = withVertices(node, nodeVertices(node).map(shift))
+  // Curves and blocks keep their location outside the vertex list.
+  if (placed.centre) placed = { ...placed, centre: shift(placed.centre) }
+  if (placed.position) placed = { ...placed, position: shift(placed.position) }
 
   return {
-    doc: { ...doc, nodes: { ...doc.nodes, [newId]: { ...placed, id: newId } }, order: [...doc.order, newId] },
+    doc: {
+      ...doc,
+      nodes: { ...doc.nodes, [newId]: { ...placed, id: newId } },
+      order: [...doc.order, newId],
+    },
     id: newId,
   }
 }

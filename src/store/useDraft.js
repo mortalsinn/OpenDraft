@@ -17,6 +17,7 @@ import {
   addChainedEdges,
   applyEdgeEdit,
   duplicateNode,
+  insertCopy,
   transformNode,
   arrayNode,
   NODE_TYPES,
@@ -36,6 +37,8 @@ import { withVertices } from '../core/vertices.js'
 import { parseLength, snapToFraction } from '../core/units.js'
 import { saveDocument, loadDocument, clearDocument } from '../core/persist.js'
 import { makeAnchor } from '../core/dimension.js'
+import { applySelection, boxFromDrag, nodesInBox } from '../core/selection.js'
+import { isSelectable } from '../core/layers.js'
 import {
   DEFAULT_LAYER_ID,
   addLayer,
@@ -60,8 +63,15 @@ export const useDraft = create((set, get) => ({
   past: [],
   future: [],
 
-  /** Id of the selected node, or null. */
-  selection: null,
+  /**
+   * Selected node ids. A SET, not a single id — every transform, delete and
+   * clipboard operation works on however many are chosen.
+   *
+   * `primary` below is the one the single-object panels show: with several
+   * selected, the LAST one picked is the one you were most recently thinking
+   * about, which is the least surprising thing to inspect.
+   */
+  selection: [],
   tool: 'line',
   /** Where the in-progress line began, or null when not drawing. */
   anchor: null,
@@ -71,6 +81,35 @@ export const useDraft = create((set, get) => ({
   shapeBase: null,
   /** Second point of a three-point arc. */
   arcSecond: null,
+  /** True while shift is held — selection adds instead of replacing. */
+  additive: false,
+  setAdditive: (additive) => set({ additive }),
+
+  /** Corner a selection box is being dragged from. */
+  boxFrom: null,
+
+  beginBox: (point) => set({ boxFrom: point }),
+
+  /** Finish a box selection, catching whatever the drag enclosed or crossed. */
+  endBox: (point) => {
+    const { boxFrom, doc, additive } = get()
+    set({ boxFrom: null })
+    if (!boxFrom) return
+
+    // A drag that never really moved is a click, and clicks are handled
+    // elsewhere — treating it as a box would select nothing and clear the set.
+    if (Math.hypot(point.x - boxFrom.x, point.y - boxFrom.y) < 1) return
+
+    const box = boxFromDrag(boxFrom, point)
+    const caught = nodesInBox(
+      Object.values(doc.nodes).filter((node) => isSelectable(doc, node)),
+      box,
+      (node) => listSegments(doc).filter((s) => s.id === node.id).map((s) => [s.start, s.end]),
+    )
+
+    set((state) => ({ selection: applySelection(state.selection, caught, { additive }) }))
+  },
+
   /** First edge picked for a two-edge edit, and where it was clicked. */
   editFirst: null,
   /** Radius for fillet, setback for chamfer. */
@@ -144,9 +183,10 @@ export const useDraft = create((set, get) => ({
 
   /** Turn the selection into a reusable component, leaving an instance behind. */
   makeComponentFromSelection: (name) => {
-    const { doc, commit, selection } = get()
-    if (!selection) return
-    commit(makeComponent(doc, selection, name || 'Component'))
+    const { doc, commit } = get()
+    const id = get().primary()
+    if (!id) return
+    commit(makeComponent(doc, id, name || 'Component'))
   },
 
   /**
@@ -165,10 +205,11 @@ export const useDraft = create((set, get) => ({
 
   /** Change an attribute on an already-placed block. */
   setPlacedAttribute: (tag, value) => {
-    const { doc, commit, selection } = get()
-    const node = selection && doc.nodes[selection]
+    const { doc, commit } = get()
+    const id = get().primary()
+    const node = id && doc.nodes[id]
     if (node?.type !== 'blockInstance') return
-    commit(updateNode(doc, selection, { attributes: { ...node.attributes, [tag]: value } }))
+    commit(updateNode(doc, id, { attributes: { ...node.attributes, [tag]: value } }))
   },
 
   /**
@@ -179,20 +220,28 @@ export const useDraft = create((set, get) => ({
    */
   transformSelection: (kind, options = {}) => {
     const { doc, commit, selection } = get()
-    const node = selection && doc.nodes[selection]
-    if (!node) return
+    const ids = selection.filter((id) => doc.nodes[id])
+    if (!ids.length) return
 
-    const base = options.base ?? nodeCentroid(node)
+    // One shared pivot for the whole set. Transforming each object about its
+    // OWN centre would scatter a selection instead of moving it as a unit.
+    const base = options.base ?? setCentroid(doc, ids)
+
+    const overAll = (transform) => {
+      let next = doc
+      for (const id of ids) next = transformNode(next, id, transform)
+      commit(next)
+    }
 
     if (kind === 'rotate') {
-      commit(transformNode(doc, selection, (p) => rotatePoint(p, base, options.angle ?? 0)))
+      overAll((p) => rotatePoint(p, base, options.angle ?? 0))
       return
     }
 
     if (kind === 'scale') {
       const factor = options.factor ?? 1
       if (!(factor > 0)) return
-      commit(transformNode(doc, selection, (p) => scalePoint(p, base, factor)))
+      overAll((p) => scalePoint(p, base, factor))
       return
     }
 
@@ -200,23 +249,30 @@ export const useDraft = create((set, get) => ({
       // Mirror about a line through the centre, at the given angle.
       const angle = options.angle ?? 0
       const far = { x: base.x + Math.cos(angle), y: base.y + Math.sin(angle), z: base.z ?? 0 }
-      commit(transformNode(doc, selection, (p) => mirrorPoint(p, base, far)))
+      overAll((p) => mirrorPoint(p, base, far))
       return
     }
 
     if (kind === 'offset') {
       const distance = options.distance ?? 0
-      const points = nodeVertices(node)
-      if (points.length < 2 || !distance) return
+      if (!distance) return
 
-      const moved = offsetPolyline(points, distance, !!node.closed)
-      const { doc: withCopy, id: copyId } = duplicateNode(doc, selection)
-      if (!copyId) return
+      let next = doc
+      for (const id of ids) {
+        const source = next.nodes[id]
+        const points = nodeVertices(source)
+        if (points.length < 2) continue
 
-      commit({
-        ...withCopy,
-        nodes: { ...withCopy.nodes, [copyId]: withVertices(withCopy.nodes[copyId], moved) },
-      })
+        const moved = offsetPolyline(points, distance, !!source.closed)
+        const { doc: withCopy, id: copyId } = duplicateNode(next, id)
+        if (!copyId) continue
+
+        next = {
+          ...withCopy,
+          nodes: { ...withCopy.nodes, [copyId]: withVertices(withCopy.nodes[copyId], moved) },
+        }
+      }
+      commit(next)
       return
     }
 
@@ -224,26 +280,75 @@ export const useDraft = create((set, get) => ({
       const { columns = 2, rows = 1, spacingX = 24, spacingY = 24 } = options
       // Drop the identity placement — the original is already there.
       const placements = rectangularArray(columns, rows, spacingX, spacingY).slice(1)
-      commit(arrayNode(doc, selection, placements.map((offset) => (p) => ({
+      const transforms = placements.map((offset) => (p) => ({
         x: p.x + offset.x,
         y: p.y + offset.y,
         z: p.z ?? 0,
-      }))))
+      }))
+
+      let next = doc
+      for (const id of ids) next = arrayNode(next, id, transforms)
+      commit(next)
       return
     }
 
     if (kind === 'arrayPolar') {
       const { count = 6, totalAngle = Math.PI * 2, centre = base } = options
       const angles = polarArray(count, totalAngle).slice(1)
-      commit(arrayNode(doc, selection, angles.map((angle) => (p) => rotatePoint(p, centre, angle))))
+      const transforms = angles.map((angle) => (p) => rotatePoint(p, centre, angle))
+
+      let next = doc
+      for (const id of ids) next = arrayNode(next, id, transforms)
+      commit(next)
     }
+  },
+
+  /**
+   * Clipboard. Holds copies of the nodes themselves, so pasting still works
+   * after the originals have been deleted.
+   */
+  clipboard: [],
+
+  copySelection: () => {
+    const { doc, selection } = get()
+    const copied = selection.map((id) => doc.nodes[id]).filter(Boolean)
+    if (copied.length) set({ clipboard: copied.map((node) => ({ ...node })) })
+  },
+
+  /** Paste, offset slightly so the copies are visible rather than hidden underneath. */
+  pasteClipboard: (offset = { x: 12, y: -12, z: 0 }) => {
+    const { doc, commit, clipboard, activeLayer } = get()
+    if (!clipboard.length) return
+
+    let next = doc
+    const pasted = []
+
+    for (const node of clipboard) {
+      const { doc: withCopy, id } = insertCopy(next, { ...node, layer: activeLayer }, offset)
+      if (!id) continue
+      next = withCopy
+      pasted.push(id)
+    }
+
+    commit(next)
+    // Selecting what you just pasted is what lets you immediately move it.
+    set({ selection: pasted })
+  },
+
+  /** Copy and paste in one step — the common case. */
+  duplicateSelection: () => {
+    get().copySelection()
+    get().pasteClipboard()
   },
 
   /** Move the selected object onto a layer. */
   assignSelectionToLayer: (layerId) => {
     const { doc, commit, selection } = get()
-    if (!selection) return
-    commit(assignLayer(doc, selection, layerId))
+    if (!selection.length) return
+    // Every selected object moves, not just the one being inspected.
+    let next = doc
+    for (const id of selection) next = assignLayer(next, id, layerId)
+    commit(next)
   },
 
   setTool: (tool) =>
@@ -257,7 +362,19 @@ export const useDraft = create((set, get) => ({
       typed: '',
       lockedAxis: null,
     }),
-  select: (selection) => set({ selection }),
+  select: (id) => set({ selection: id ? [id] : [] }),
+  selectMany: (ids, additive = false) =>
+    set((state) => ({ selection: applySelection(state.selection, ids, { additive }) })),
+  clearSelection: () => set({ selection: [] }),
+
+  /** The node the single-object panels act on. */
+  primary: () => {
+    const { selection, doc } = get()
+    for (let i = selection.length - 1; i >= 0; i--) {
+      if (doc.nodes[selection[i]]) return selection[i]
+    }
+    return null
+  },
   setView: (view) => set({ view }),
   setSnap: (snap) => set({ snap }),
   setTyped: (typed) => set({ typed }),
@@ -278,11 +395,12 @@ export const useDraft = create((set, get) => ({
    * Falls back to a plain conversion for anything that is not a raw edge.
    */
   promoteSelection: (type) => {
-    const { selection, doc, commit } = get()
-    const node = selection && doc.nodes[selection]
+    const { doc, commit } = get()
+    const id = get().primary()
+    const node = id && doc.nodes[id]
     if (!node) return
 
-    commit(node.type === 'edge' ? promoteChain(doc, selection, type) : convertNode(doc, selection, type))
+    commit(node.type === 'edge' ? promoteChain(doc, id, type) : convertNode(doc, id, type))
   },
 
   /**
@@ -293,13 +411,14 @@ export const useDraft = create((set, get) => ({
   pushPull: null,
 
   beginPushPull: (screenY) => {
-    const { selection, doc } = get()
-    const node = selection && doc.nodes[selection]
+    const { doc } = get()
+    const id = get().primary()
+    const node = id && doc.nodes[id]
     const definition = node && NODE_TYPES[node.type]
     const key = definition?.pushPull
     if (!key) return
 
-    set({ pushPull: { id: selection, key, startY: screenY, startValue: node[key] ?? 0 } })
+    set({ pushPull: { id, key, startY: screenY, startValue: node[key] ?? 0 } })
   },
 
   /**
@@ -370,7 +489,7 @@ export const useDraft = create((set, get) => ({
 
     set({
       moving: { id, index: onVertex ? index : null, grab: worldPoint, before: doc },
-      selection: id,
+      selection: [id],
     })
   },
 
@@ -405,19 +524,24 @@ export const useDraft = create((set, get) => ({
 
   /** Edit one parameter of the selected node. */
   editSelection: (key, value) => {
-    const { selection, doc, commit } = get()
-    if (!selection || !doc.nodes[selection]) return
+    const { doc, commit } = get()
+    const id = get().primary()
+    if (!id || !doc.nodes[id]) return
     if (!Number.isFinite(value)) return
-    commit(updateNode(doc, selection, { [key]: value }))
+    commit(updateNode(doc, id, { [key]: value }))
   },
 
   deleteSelection: () => {
     const { selection, doc, commit } = get()
-    if (!selection || !doc.nodes[selection]) return
-    // Cascades to the dimensions that measured it, so no invisible orphans
+    if (!selection.length) return
+
+    // Cascades to the dimensions that measured them, so no invisible orphans
     // are left behind. One undo restores the lot.
-    commit(removeNodeCascade(doc, selection))
-    set({ selection: null })
+    let next = doc
+    for (const id of selection) next = removeNodeCascade(next, id)
+
+    commit(next)
+    set({ selection: [] })
   },
 
   /** Throw the drawing away and start over. */
@@ -425,7 +549,7 @@ export const useDraft = create((set, get) => ({
     clearDocument()
     const doc = createDocument()
     saveDocument(doc)
-    set({ doc, past: [], future: [], selection: null, anchor: null, typed: '' })
+    set({ doc, past: [], future: [], selection: [], anchor: null, typed: '' })
   },
 
   undo: () =>
@@ -440,7 +564,8 @@ export const useDraft = create((set, get) => ({
         future: [state.doc, ...state.future],
         anchor: null,
         typed: '',
-        selection: doc.nodes[state.selection] ? state.selection : null,
+        // Keep only what still exists in the restored document.
+        selection: state.selection.filter((id) => doc.nodes[id]),
       }
     }),
 
@@ -455,7 +580,8 @@ export const useDraft = create((set, get) => ({
         future: state.future.slice(1),
         anchor: null,
         typed: '',
-        selection: doc.nodes[state.selection] ? state.selection : null,
+        // Keep only what still exists in the restored document.
+        selection: state.selection.filter((id) => doc.nodes[id]),
       }
     }),
 
@@ -600,7 +726,16 @@ export const useDraft = create((set, get) => ({
     if (tool === 'select') {
       // The inference engine already worked out which node is under the
       // cursor, so selection reuses that rather than hit-testing twice.
-      set({ selection: snapRefs[0] ?? null })
+      const { additive } = get()
+      const hit = snapRefs[0]
+
+      set((state) => ({
+        selection: hit
+          ? applySelection(state.selection, [hit], { additive })
+          : additive
+            ? state.selection // an empty additive click should not wipe the set
+            : [],
+      }))
       return
     }
 
@@ -750,18 +885,33 @@ if (import.meta.env?.DEV && typeof window !== 'undefined') {
   window.__draft = useDraft
 }
 
-/** Centre of a node's vertices — the natural pivot for a transform. */
-function nodeCentroid(node) {
-  const vertices = node.centre ? [node.centre] : nodeVertices(node)
-  if (!vertices.length) return { x: 0, y: 0, z: 0 }
+/**
+ * Shared centre of a set of nodes — the pivot a transform turns about.
+ *
+ * One pivot for the whole selection, not one each: rotating every object about
+ * its own centre would spin each in place and scatter the arrangement, when
+ * what you asked for was to turn the group.
+ */
+function setCentroid(doc, ids) {
+  const points = []
+
+  for (const id of ids) {
+    const node = doc.nodes[id]
+    if (!node) continue
+    if (node.centre) points.push(node.centre)
+    else if (node.position) points.push(node.position)
+    else points.push(...nodeVertices(node))
+  }
+
+  if (!points.length) return { x: 0, y: 0, z: 0 }
 
   let x = 0
   let y = 0
-  for (const vertex of vertices) {
-    x += vertex.x
-    y += vertex.y
+  for (const point of points) {
+    x += point.x
+    y += point.y
   }
-  return { x: x / vertices.length, y: y / vertices.length, z: 0 }
+  return { x: x / points.length, y: y / points.length, z: 0 }
 }
 
 function clamp(value, min, max) {
