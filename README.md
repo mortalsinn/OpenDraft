@@ -59,25 +59,50 @@ and the AscendOS estimator ingests those. Adding a priced product means adding
 one entry to `NODE_TYPES` — the scene, the takeoff panel and the estimator
 contract all pick it up without further plumbing.
 
+## What it does
+
+**Draw and infer.** Lines snap to endpoints, midpoints, intersections, edges,
+axes, extensions and parallels, ranked by priority then distance, with tolerance
+measured in screen pixels so snapping feels identical at any zoom. Aim for
+direction, type a number for exact distance.
+
+**Objects that know what they are.** Promote lines into railing runs, decks and
+stairs. Connected lines are absorbed into one run, so a deck perimeter shares
+its corner posts instead of double-counting them. A stair is solved from the
+floor-to-floor rise rather than drawn, so every riser is identical.
+
+**The drawing is the quote.** One layout function decides where every post and
+picket goes, and both the 3D scene and the takeoff read it — so what you are
+quoted cannot drift from what is drawn.
+
+**Associative dimensions.** A dimension stores a reference to the vertex it
+measures, not a copy. Move the geometry and it follows.
+
+**Code checking with citations.** Guards and stairs are checked against a
+selectable jurisdiction — Ontario within a dwelling, Ontario public, US IRC —
+and every finding names its clause. Changing jurisdiction re-evaluates the
+drawing; it never silently reshapes it.
+
+**Layers where hiding is not excluding.** Visibility and quantification are
+separate flags, because hiding a layer to see behind it must not quietly drop
+its contents from the quote.
+
+**Components.** Draw one, place many, edit the definition and every instance
+changes.
+
+**Export.** A dimensioned plan sheet at a real architectural scale with the
+takeoff in the title block, and a versioned handoff document for the AscendOS
+estimator.
+
 ## Status
 
-**Phase 1 — the feel.** Done. Units engine, document model, plan/orbit cameras,
-inference engine, line tool, value box.
+Phases 1–11 done, 185 tests. Working: line, select, move, push/pull, dimension,
+note and component tools; railing runs, decks and stairs; layers; compliance;
+PDF and takeoff export; persistence across reloads.
 
-**Phase 2 — the drawing becomes the quote.** Done. Select tool, promote an edge
-to a `RailingRun`, real 3D posts and pickets, a parameter inspector, and live
-quantities. Drawings persist across reloads.
-
-Draw a line, select it, hit *Make this a railing run*, and a 20' run resolves to
-5 posts and 48 pickets at a 3 25/32" gap. Tighten the max gap to 2" and it
-becomes 84 pickets at 1 29/32" — geometry and quote move together because they
-read the same function.
-
-Next:
-
-- Phase 3 — the rest of the catalog: Wall, Slab, StairRun; real CodeCompass
-  rules replacing the hard-coded `maxGap`; corners and multi-segment runs
-- Phase 4 — dimensioned PDF export and the AscendOS estimator handoff
+Not done yet: multi-select, rotated and radial geometry, sloped faces, walls and
+openings, raking guards on stairs, tablet and stylus input, and any storage
+beyond a single drawing in localStorage.
 
 ## Running it
 
@@ -91,8 +116,11 @@ npm test        # units + inference
 
 | | |
 |---|---|
-| Left click (Line tool) | place a point; the run chains from the last one |
-| Left click (Select tool) | select a line, then edit or promote it on the right |
+| Left click (Line) | place a point; the run chains from the last one |
+| Left click (Select) | select a line, then edit or promote it on the right |
+| Drag (Move) | a corner moves that corner; anywhere else moves the whole object |
+| Drag (Push/Pull) | edits a parameter — slab thickness, railing height, stair rise |
+| Two clicks (Dimension) | snapping to a corner binds it so it follows the geometry |
 | Type a number, Enter | commit an exact length along the inferred direction |
 | Arrow keys | lock to an axis |
 | Esc | abandon the line in progress |
