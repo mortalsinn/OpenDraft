@@ -19,6 +19,7 @@
 import { railingQuantities, railingSegments, RAILING_DEFAULTS } from './railing.js'
 import { buildChain } from './chain.js'
 import { polygonArea, polygonAreaSquareFeet, polygonPerimeter } from './polygon.js'
+import { stairQuantities, stairIssues, STAIR_DEFAULTS } from './stairs.js'
 
 /** Monotonic id source. */
 let nextId = 1
@@ -128,6 +129,30 @@ export const NODE_TYPES = {
     ],
     /** Which parameter the push/pull tool drags. */
     pushPull: 'thickness',
+  },
+
+  /**
+   * A flight of stairs. The drawn line gives the start and the direction; the
+   * run is computed, because a stair whose run disagrees with its tread count
+   * is not a stair.
+   */
+  stairRun: {
+    label: 'Stair run',
+    create: ({ points, start, end, ...overrides }) => ({
+      points: points ?? (start && end ? [start, end] : []),
+      closed: false,
+      ...STAIR_DEFAULTS,
+      ...overrides,
+    }),
+    quantities: stairQuantities,
+    issues: stairIssues,
+    editable: [
+      { key: 'totalRise', label: 'Floor to floor', min: 1, max: 480 },
+      { key: 'treadDepth', label: 'Tread depth', min: 6, max: 24 },
+      { key: 'width', label: 'Width', min: 24, max: 120 },
+      { key: 'nosing', label: 'Nosing', min: 0, max: 3 },
+    ],
+    pushPull: 'totalRise',
   },
 }
 
@@ -287,6 +312,23 @@ export function migrateDocument(doc) {
   }
 
   return null // unknown schema — caller should start fresh rather than guess
+}
+
+/**
+ * Every code and comfort finding in the drawing, tagged with the node it came
+ * from. Objects are allowed to be non-compliant mid-edit; the drawing just has
+ * to say so.
+ */
+export function documentIssues(doc) {
+  const found = []
+
+  for (const node of listNodes(doc)) {
+    const check = NODE_TYPES[node.type]?.issues
+    if (!check) continue
+    for (const issue of check(node)) found.push({ ...issue, nodeId: node.id })
+  }
+
+  return found
 }
 
 /**

@@ -1,6 +1,7 @@
 import { useDraft } from '../store/useDraft.js'
 import { NODE_TYPES } from '../core/doc.js'
 import { layoutRailing } from '../core/railing.js'
+import { layoutStair } from '../core/stairs.js'
 import { buildChain } from '../core/chain.js'
 import { polygonAreaSquareFeet, polygonPerimeter } from '../core/polygon.js'
 import { formatLength, parseLength } from '../core/units.js'
@@ -37,6 +38,8 @@ export default function Inspector() {
   const definition = NODE_TYPES[node.type]
   const layout = node.type === 'railingRun' ? layoutRailing(node) : null
   const slab = node.type === 'slab'
+  const stair = node.type === 'stairRun' ? layoutStair(node) : null
+  const issues = definition?.issues?.(node) ?? []
 
   // Whether promoting this edge would yield a genuine ring — a deck cannot be
   // made from an open chain without inventing an edge nobody drew.
@@ -65,6 +68,13 @@ export default function Inspector() {
             className="mb-1.5 w-full rounded bg-amber-500 px-2 py-1.5 text-xs font-semibold text-slate-950 transition hover:bg-amber-400"
           >
             Make this a railing run
+          </button>
+
+          <button
+            onClick={() => promote('stairRun')}
+            className="mb-1.5 w-full rounded bg-sky-500 px-2 py-1.5 text-xs font-semibold text-slate-950 transition hover:bg-sky-400"
+          >
+            Make this a stair
           </button>
 
           <button
@@ -102,6 +112,32 @@ export default function Inspector() {
           <Readout label="Posts" value={layout.posts.length} />
           <Readout label="Actual gap" value={formatLength(layout.gap, { denominator: 32 })} />
         </div>
+      )}
+
+      {stair && (
+        <div className="mb-3 rounded bg-white/5 px-2 py-1.5 text-xs">
+          <Readout label="Risers" value={stair.riserCount} />
+          <Readout label="Riser height" value={formatLength(stair.riserHeight, { denominator: 32 })} />
+          <Readout label="Treads" value={stair.treadCount} />
+          <Readout label="Total run" value={formatLength(stair.totalRun)} />
+        </div>
+      )}
+
+      {issues.length > 0 && (
+        <ul className="mb-3 space-y-1">
+          {issues.map((issue, i) => (
+            <li
+              key={i}
+              className={`rounded px-2 py-1 text-[11px] leading-snug ${
+                issue.severity === 'error'
+                  ? 'bg-red-500/15 text-red-300'
+                  : 'bg-amber-500/15 text-amber-300'
+              }`}
+            >
+              {issue.message}
+            </li>
+          ))}
+        </ul>
       )}
 
       {definition?.editable?.map((field) => (

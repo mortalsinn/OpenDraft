@@ -9,6 +9,7 @@ import { distance, listSegments } from '../core/doc.js'
 import { railingSegments } from '../core/railing.js'
 import Railing from './Railing.jsx'
 import Slab from './Slab.jsx'
+import Stair from './Stair.jsx'
 
 // Z-up, like every CAD tool and like SketchUp. Plan view then looks straight
 // down -Z and 2D drafting happens on the XY plane, which keeps the plan-view
@@ -213,6 +214,10 @@ function Geometry() {
 
     if (node.type === 'slab') {
       return <Slab key={node.id} node={node} selected={selected} />
+    }
+
+    if (node.type === 'stairRun') {
+      return <Stair key={node.id} node={node} selected={selected} />
     }
 
     if (node.type === 'railingRun') {
