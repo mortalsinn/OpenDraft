@@ -39,6 +39,15 @@ import { saveDocument, loadDocument, clearDocument } from '../core/persist.js'
 import { makeAnchor } from '../core/dimension.js'
 import { applySelection, boxFromDrag, nodesInBox } from '../core/selection.js'
 import { createSheet, createViewport, makeSheetId, frameBounds } from '../core/sheets.js'
+import {
+  listDrawings,
+  saveDrawing,
+  loadDrawing,
+  deleteDrawing,
+  duplicateDrawing,
+  blankDrawing,
+  fromFile,
+} from '../core/library.js'
 import { documentBounds } from '../core/plan.js'
 import { isSelectable } from '../core/layers.js'
 import {
@@ -156,6 +165,85 @@ export const useDraft = create((set, get) => ({
   setJurisdiction: (jurisdiction) => {
     const { doc, commit } = get()
     commit({ ...doc, jurisdiction })
+  },
+
+  /** The drawing currently open, and the library around it. */
+  drawingId: null,
+  drawingName: 'Untitled',
+  library: listDrawings(),
+
+  refreshLibrary: () => set({ library: listDrawings() }),
+
+  /** Persist the open drawing under its name. */
+  saveDrawingAs: (name) => {
+    const { doc, drawingId, drawingName } = get()
+    const entry = saveDrawing(drawingId, name ?? drawingName, doc, new Date().toISOString())
+    if (!entry) return null
+
+    set({ drawingId: entry.id, drawingName: entry.name, library: listDrawings() })
+    return entry
+  },
+
+  openDrawing: (id) => {
+    const doc = loadDrawing(id)
+    // Refusing is right: handing back a blank that then gets saved over the
+    // real one would destroy work.
+    if (!doc) return false
+
+    const entry = listDrawings().find((e) => e.id === id)
+    set({
+      doc,
+      past: [],
+      future: [],
+      selection: [],
+      anchor: null,
+      typed: '',
+      drawingId: id,
+      drawingName: entry?.name ?? 'Untitled',
+      projectName: entry?.name ?? get().projectName,
+    })
+    return true
+  },
+
+  closeDrawing: () => {
+    const doc = blankDrawing()
+    set({
+      doc,
+      past: [],
+      future: [],
+      selection: [],
+      drawingId: null,
+      drawingName: 'Untitled',
+    })
+  },
+
+  removeDrawing: (id) => {
+    deleteDrawing(id)
+    const { drawingId } = get()
+    set({ library: listDrawings() })
+    if (drawingId === id) get().closeDrawing()
+  },
+
+  copyDrawing: (id, name) => {
+    duplicateDrawing(id, name, new Date().toISOString())
+    set({ library: listDrawings() })
+  },
+
+  /** Load a drawing that arrived as a file. */
+  importDrawing: (parsed) => {
+    const result = fromFile(parsed)
+    if (result.error) return result.error
+
+    set({
+      doc: result.doc,
+      past: [],
+      future: [],
+      selection: [],
+      drawingId: null,
+      drawingName: result.name,
+      projectName: result.name,
+    })
+    return null
   },
 
   /** The sheet being edited in the sheets panel. */
