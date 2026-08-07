@@ -5,9 +5,10 @@ import * as THREE from 'three'
 import { useDraft } from '../store/useDraft.js'
 import { infer } from '../core/inference.js'
 import { formatLength } from '../core/units.js'
-import { distance } from '../core/doc.js'
+import { distance, listSegments } from '../core/doc.js'
 import { railingSegments } from '../core/railing.js'
 import Railing from './Railing.jsx'
+import Slab from './Slab.jsx'
 
 // Z-up, like every CAD tool and like SketchUp. Plan view then looks straight
 // down -Z and 2D drafting happens on the XY plane, which keeps the plan-view
@@ -92,32 +93,56 @@ function PointerBridge() {
     const canvas = gl.domElement
 
     const onMove = (event) => {
+      const state = useDraft.getState()
+
+      // A push/pull in progress owns the pointer; inference would only fight it.
+      if (state.pushPull) {
+        state.updatePushPull(event.clientY, worldPerPixel())
+        return
+      }
+
       const cursor = toWorld(event)
       if (!cursor) return
-      const { doc, anchor, gridStep, lockedAxis, setSnap } = useDraft.getState()
-      setSnap(
+      state.setSnap(
         infer({
           cursor,
-          segments: Object.values(doc.nodes).filter((n) => n.start && n.end),
-          anchor,
+          segments: listSegments(state.doc),
+          anchor: state.anchor,
           worldPerPixel: worldPerPixel(),
-          gridStep,
-          lockedAxis,
+          gridStep: state.gridStep,
+          lockedAxis: state.lockedAxis,
         }),
       )
+    }
+
+    const onPointerDown = (event) => {
+      const state = useDraft.getState()
+      if (state.tool !== 'pushpull' || !state.selection) return
+      state.beginPushPull(event.clientY)
+    }
+
+    const onPointerUp = () => {
+      const state = useDraft.getState()
+      if (state.pushPull) state.endPushPull()
     }
 
     const onClick = (event) => {
       // Ignore the click that ends an orbit/pan drag.
       if (event.detail === 0) return
-      const { snap, clickPoint } = useDraft.getState()
-      if (snap) clickPoint(snap.point, snap.refs)
+      const state = useDraft.getState()
+      // A click that finished a push/pull must not also place a point.
+      if (state.tool === 'pushpull') return
+      if (state.snap) state.clickPoint(state.snap.point, state.snap.refs)
     }
 
     canvas.addEventListener('pointermove', onMove)
+    canvas.addEventListener('pointerdown', onPointerDown)
+    window.addEventListener('pointerup', onPointerUp)
     canvas.addEventListener('click', onClick)
     return () => {
       canvas.removeEventListener('pointermove', onMove)
+      canvas.removeEventListener('pointerdown', onPointerDown)
+      window.removeEventListener('pointerup', onPointerUp)
       canvas.removeEventListener('click', onClick)
     }
   }, [gl, toWorld, worldPerPixel])
@@ -185,6 +210,10 @@ function Geometry() {
 
   return nodes.map((node) => {
     const selected = node.id === selection
+
+    if (node.type === 'slab') {
+      return <Slab key={node.id} node={node} selected={selected} />
+    }
 
     if (node.type === 'railingRun') {
       return (

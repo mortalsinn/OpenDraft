@@ -8,6 +8,7 @@ import {
   removeNode,
   computeTakeoff,
   listSegments,
+  NODE_TYPES,
 } from '../core/doc.js'
 import { parseLength, snapToFraction } from '../core/units.js'
 import { saveDocument, loadDocument, clearDocument } from '../core/persist.js'
@@ -66,6 +67,57 @@ export const useDraft = create((set, get) => ({
     if (!node) return
 
     commit(node.type === 'edge' ? promoteChain(doc, selection, type) : convertNode(doc, selection, type))
+  },
+
+  /**
+   * Push/pull state. `dragging` holds what the drag started from, so the whole
+   * gesture resolves against the original value rather than accumulating
+   * rounding error frame by frame.
+   */
+  pushPull: null,
+
+  beginPushPull: (screenY) => {
+    const { selection, doc } = get()
+    const node = selection && doc.nodes[selection]
+    const definition = node && NODE_TYPES[node.type]
+    const key = definition?.pushPull
+    if (!key) return
+
+    set({ pushPull: { id: selection, key, startY: screenY, startValue: node[key] ?? 0 } })
+  },
+
+  /**
+   * Update the dragged parameter. `worldPerPixel` converts the screen drag into
+   * world units so the gesture tracks the cursor at any zoom.
+   */
+  updatePushPull: (screenY, worldPerPixel) => {
+    const { pushPull, doc } = get()
+    if (!pushPull) return
+
+    const definition = NODE_TYPES[doc.nodes[pushPull.id]?.type]
+    const field = definition?.editable?.find((f) => f.key === pushPull.key)
+
+    // Screen Y grows downward; dragging up should make things thicker.
+    const delta = (pushPull.startY - screenY) * worldPerPixel
+    const next = clamp(snapToFraction(pushPull.startValue + delta), field?.min ?? 0, field?.max ?? Infinity)
+
+    // Live preview only — not pushed onto the undo stack until the drag ends,
+    // or a single push/pull would leave dozens of entries behind it.
+    set({ doc: updateNode(doc, pushPull.id, { [pushPull.key]: next }) })
+  },
+
+  endPushPull: () => {
+    const { pushPull, doc, past } = get()
+    if (!pushPull) return
+
+    const settled = doc.nodes[pushPull.id]?.[pushPull.key]
+    set({ pushPull: null })
+
+    if (settled === pushPull.startValue) return // nothing actually moved
+
+    // Rewind the live preview and commit the net change as one history entry.
+    saveDocument(doc)
+    set({ past: [...past, updateNode(doc, pushPull.id, { [pushPull.key]: pushPull.startValue })], future: [] })
   },
 
   /** Edit one parameter of the selected node. */
@@ -154,14 +206,40 @@ export const useDraft = create((set, get) => ({
    * precise: you aim roughly, then state the number.
    */
   commitTyped: () => {
-    const { anchor, snap, typed, doc, commit } = get()
-    if (!anchor || !snap || !typed.trim()) return
+    const { anchor, snap, typed, doc, commit, pushPull, selection, tool } = get()
+    if (!typed.trim()) return
+
+    // During a push/pull — or with something selected and the tool active —
+    // a typed number sets the parameter exactly. Dragging gets you close at
+    // whatever the zoom allows; typing is how you land on 5 1/2".
+    if (tool === 'pushpull' && (pushPull || selection)) {
+      const id = pushPull?.id ?? selection
+      const node = doc.nodes[id]
+      const key = NODE_TYPES[node?.type]?.pushPull
+      const exact = parseLength(typed)
+      if (!node || !key || exact === null) {
+        set({ typed: '' })
+        return
+      }
+
+      const field = NODE_TYPES[node.type].editable?.find((f) => f.key === key)
+      const value = clamp(exact, field?.min ?? 0, field?.max ?? Infinity)
+
+      // Land on the original value as the undo point, not the dragged preview.
+      const base = pushPull ? updateNode(doc, id, { [key]: pushPull.startValue }) : doc
+      set({ doc: base, pushPull: null, typed: '' })
+      get().commit(updateNode(base, id, { [key]: value }))
+      return
+    }
+
+    if (!anchor || !snap) return
 
     const requested = parseLength(typed)
     if (requested === null || requested === 0) {
       set({ typed: '' })
       return
     }
+
 
     const direction = normalize({
       x: snap.point.x - anchor.x,
@@ -196,6 +274,17 @@ function samePoint(a, b) {
 
 function snapPoint(p) {
   return { x: snapToFraction(p.x), y: snapToFraction(p.y), z: snapToFraction(p.z ?? 0) }
+}
+
+// A handle on the store from the console during development. The canvas eats
+// most interactions, so without this there is no way to see why a gesture did
+// not take.
+if (import.meta.env?.DEV && typeof window !== 'undefined') {
+  window.__draft = useDraft
+}
+
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value))
 }
 
 function normalize(v) {

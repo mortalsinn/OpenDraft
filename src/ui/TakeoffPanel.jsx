@@ -50,7 +50,7 @@ export default function TakeoffPanel() {
                 <tr key={line.sku} className="border-b border-white/5">
                   <td className="py-1.5 text-slate-300">{line.description}</td>
                   <td className="py-1.5 text-right font-mono tabular-nums text-slate-100">
-                    {line.unit === 'in' ? formatLength(line.quantity) : line.quantity}
+                    {formatQuantity(line)}
                   </td>
                 </tr>
               ))}
@@ -60,6 +60,19 @@ export default function TakeoffPanel() {
       </div>
     </div>
   )
+}
+
+/**
+ * Present a quantity the way its unit is actually bought.
+ *
+ * Lengths read as feet and inches; areas get one decimal — a raw
+ * 276.9287109375 sq ft is not a number anyone puts on a purchase order.
+ */
+function formatQuantity(line) {
+  if (line.unit === 'in') return formatLength(line.quantity)
+  if (line.unit === 'sq ft') return `${line.quantity.toFixed(1)} sq ft`
+  if (line.unit === 'ea') return String(Math.round(line.quantity))
+  return `${Math.round(line.quantity * 100) / 100} ${line.unit}`
 }
 
 function Row({ label, value }) {

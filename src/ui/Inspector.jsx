@@ -1,6 +1,8 @@
 import { useDraft } from '../store/useDraft.js'
 import { NODE_TYPES } from '../core/doc.js'
 import { layoutRailing } from '../core/railing.js'
+import { buildChain } from '../core/chain.js'
+import { polygonAreaSquareFeet, polygonPerimeter } from '../core/polygon.js'
 import { formatLength, parseLength } from '../core/units.js'
 
 /**
@@ -34,6 +36,13 @@ export default function Inspector() {
 
   const definition = NODE_TYPES[node.type]
   const layout = node.type === 'railingRun' ? layoutRailing(node) : null
+  const slab = node.type === 'slab'
+
+  // Whether promoting this edge would yield a genuine ring — a deck cannot be
+  // made from an open chain without inventing an edge nobody drew.
+  const chainIsClosed =
+    node.type === 'edge' &&
+    buildChain(Object.values(doc.nodes).filter((n) => n.type === 'edge'), node.id).closed
 
   return (
     <div className="border-b border-white/10 px-4 py-3">
@@ -50,18 +59,36 @@ export default function Inspector() {
       </div>
 
       {node.type === 'edge' && (
-        <button
-          onClick={() => promote('railingRun')}
-          className="mb-2 w-full rounded bg-amber-500 px-2 py-1.5 text-xs font-semibold text-slate-950 transition hover:bg-amber-400"
-        >
-          Make this a railing run
-        </button>
+        <>
+          <button
+            onClick={() => promote('railingRun')}
+            className="mb-1.5 w-full rounded bg-amber-500 px-2 py-1.5 text-xs font-semibold text-slate-950 transition hover:bg-amber-400"
+          >
+            Make this a railing run
+          </button>
+
+          <button
+            onClick={() => promote('slab')}
+            disabled={!chainIsClosed}
+            title={chainIsClosed ? undefined : 'A deck needs a closed loop of lines'}
+            className="mb-2 w-full rounded bg-stone-500 px-2 py-1.5 text-xs font-semibold text-slate-950 transition hover:bg-stone-400 disabled:cursor-not-allowed disabled:opacity-30"
+          >
+            Make this a deck
+          </button>
+
+          <p className="mb-2 text-[11px] leading-snug text-slate-500">
+            Connected lines are absorbed into one run, so corners share a post.
+            {!chainIsClosed && ' A deck needs the loop to close.'}
+          </p>
+        </>
       )}
 
-      {node.type === 'edge' && (
-        <p className="mb-2 text-[11px] leading-snug text-slate-500">
-          Connected lines are absorbed into one run, so corners share a post.
-        </p>
+      {slab && (
+        <div className="mb-3 rounded bg-white/5 px-2 py-1.5 text-xs">
+          <Readout label="Area" value={`${polygonAreaSquareFeet(node.points).toFixed(1)} sq ft`} />
+          <Readout label="Perimeter" value={formatLength(polygonPerimeter(node.points))} />
+          <Readout label="Corners" value={node.points.length} />
+        </div>
       )}
 
       {layout && (

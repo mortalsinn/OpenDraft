@@ -101,6 +101,47 @@ describe('promoteChain', () => {
   })
 })
 
+describe('slabs', () => {
+  /** A 12' x 10' deck ring. */
+  const ring = [p(0, 0), p(144, 0), p(144, 120), p(0, 120)]
+
+  it('quotes decking by area and rim board by perimeter', () => {
+    const doc = addNode(createDocument(), 'slab', { points: ring })
+    const lines = computeTakeoff(doc)
+
+    expect(lines.find((l) => l.sku === 'DECK-SF').quantity).toBe(120) // sq ft
+    expect(lines.find((l) => l.sku === 'RIM').quantity).toBe(2 * 144 + 2 * 120)
+  })
+
+  it('converts area into linear board footage', () => {
+    const doc = addNode(createDocument(), 'slab', { points: ring, boardWidth: 5.5 })
+    const linear = computeTakeoff(doc).find((l) => l.sku === 'DECK-LF').quantity
+    expect(linear).toBeCloseTo((144 * 120) / 5.5, 6)
+  })
+
+  it('refuses to build a deck from an open chain', () => {
+    // Closing it silently would invent an edge nobody drew and quote decking
+    // for a shape that is not there.
+    const corners = [p(0, 0), p(144, 0), p(144, 120)]
+    let doc = createDocument()
+    for (let i = 0; i < corners.length - 1; i++) {
+      doc = addNode(doc, 'edge', { start: corners[i], end: corners[i + 1] })
+    }
+    expect(promoteChain(doc, doc.order[0], 'slab')).toBe(doc)
+  })
+
+  it('builds a deck from a closed chain', () => {
+    let doc = createDocument()
+    for (let i = 0; i < 4; i++) {
+      doc = addNode(doc, 'edge', { start: ring[i], end: ring[(i + 1) % 4] })
+    }
+    const promoted = promoteChain(doc, doc.order[0], 'slab')
+
+    expect(promoted.nodes[doc.order[0]].type).toBe('slab')
+    expect(computeTakeoff(promoted).find((l) => l.sku === 'DECK-SF').quantity).toBe(120)
+  })
+})
+
 describe('migrateDocument', () => {
   it('rewrites v1 single-segment railings as polylines', () => {
     const v1 = {

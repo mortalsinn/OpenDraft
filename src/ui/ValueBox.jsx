@@ -11,9 +11,16 @@ import { distance } from '../core/doc.js'
  * length. That combination — rough aim, exact number — is what makes drafting
  * fast without making it imprecise.
  */
+/** Human name for a push/pull parameter. */
+function labelFor(key) {
+  return { thickness: 'Thickness', height: 'Height', elevation: 'Elevation' }[key] ?? key
+}
+
 export default function ValueBox() {
   const anchor = useDraft((s) => s.anchor)
   const snap = useDraft((s) => s.snap)
+  const pushPull = useDraft((s) => s.pushPull)
+  const doc = useDraft((s) => s.doc)
   const typed = useDraft((s) => s.typed)
   const setTyped = useDraft((s) => s.setTyped)
   const commitTyped = useDraft((s) => s.commitTyped)
@@ -79,11 +86,20 @@ export default function ValueBox() {
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [setTyped, commitTyped, cancel, undo, redo, setLockedAxis])
 
-  const live = anchor && snap ? formatLength(distance(anchor, snap.point)) : null
+  // During a push/pull the box tracks the parameter being dragged, so the same
+  // "aim roughly, type exactly" gesture works for thickness as for length.
+  const dragged = pushPull ? doc.nodes[pushPull.id]?.[pushPull.key] : null
+
+  const live =
+    dragged != null
+      ? formatLength(dragged)
+      : anchor && snap
+        ? formatLength(distance(anchor, snap.point))
+        : null
 
   return (
     <div className="pointer-events-none absolute bottom-4 right-4 flex items-center gap-2 rounded-md bg-slate-900/95 px-3 py-2 text-sm ring-1 ring-white/10">
-      <span className="text-slate-500">Length</span>
+      <span className="text-slate-500">{pushPull ? labelFor(pushPull.key) : 'Length'}</span>
       <span
         className={`min-w-28 text-right font-mono tabular-nums ${
           typed ? 'text-amber-300' : 'text-slate-200'

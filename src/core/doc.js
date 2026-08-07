@@ -18,6 +18,7 @@
 
 import { railingQuantities, railingSegments, RAILING_DEFAULTS } from './railing.js'
 import { buildChain } from './chain.js'
+import { polygonArea, polygonAreaSquareFeet, polygonPerimeter } from './polygon.js'
 
 /** Monotonic id source. */
 let nextId = 1
@@ -83,6 +84,50 @@ export const NODE_TYPES = {
       { key: 'maxGap', label: 'Max clear gap', min: 1, max: 6 },
       { key: 'picketWidth', label: 'Picket width', min: 0.25, max: 3 },
     ],
+    /** Pulling on a railing raises it — the same gesture, a different parameter. */
+    pushPull: 'height',
+  },
+
+  /**
+   * A horizontal surface: a deck platform, a landing, a slab.
+   *
+   * Faces in this app are horizontal, so a plan-view ring plus an elevation and
+   * a thickness describes one completely. Push/pull edits the thickness — a
+   * parameter — rather than moving raw topology around.
+   */
+  slab: {
+    label: 'Slab',
+    create: ({ points, start, end, thickness = 5.5, elevation = 0, boardWidth = 5.5, ...overrides }) => ({
+      points: points ?? (start && end ? [start, end] : []),
+      closed: true, // a face is a ring by definition
+      thickness,
+      elevation,
+      boardWidth,
+      ...overrides,
+    }),
+    quantities: (node) => {
+      const area = polygonAreaSquareFeet(node.points)
+      if (area <= 0) return []
+
+      const perimeter = polygonPerimeter(node.points)
+
+      // Decking is bought by area, but the linear footage of board is what
+      // actually gets cut, so quote both.
+      const linearInches = node.boardWidth > 0 ? (polygonArea(node.points) / node.boardWidth) : 0
+
+      return [
+        { sku: 'DECK-SF', description: 'Decking', unit: 'sq ft', quantity: area },
+        { sku: 'DECK-LF', description: 'Decking — linear', unit: 'in', quantity: linearInches },
+        { sku: 'RIM', description: 'Rim board', unit: 'in', quantity: perimeter },
+      ]
+    },
+    editable: [
+      { key: 'thickness', label: 'Thickness', min: 0.5, max: 48 },
+      { key: 'elevation', label: 'Elevation', min: -600, max: 600 },
+      { key: 'boardWidth', label: 'Board width', min: 1, max: 24 },
+    ],
+    /** Which parameter the push/pull tool drags. */
+    pushPull: 'thickness',
   },
 }
 
@@ -166,6 +211,10 @@ export function promoteChain(doc, edgeId, type = 'railingRun') {
   const { points, edgeIds, closed } = buildChain(edges, edgeId)
   if (points.length < 2) return doc
 
+  // A face needs a genuine ring. Silently closing an open chain would invent
+  // an edge the user never drew and quote decking for a shape that is not there.
+  if (type === 'slab' && (!closed || points.length < 3)) return doc
+
   const nodes = { ...doc.nodes }
   for (const id of edgeIds) delete nodes[id]
 
@@ -200,7 +249,7 @@ export function listSegments(doc) {
   const segments = []
 
   for (const node of listNodes(doc)) {
-    if (node.type === 'railingRun') {
+    if (node.points?.length >= 2) {
       for (const [start, end] of railingSegments(node)) {
         segments.push({ id: node.id, start, end })
       }

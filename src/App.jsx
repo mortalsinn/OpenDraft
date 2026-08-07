@@ -28,6 +28,7 @@ export default function App() {
           {[
             ['line', 'Line'],
             ['select', 'Select'],
+            ['pushpull', 'Push/Pull'],
           ].map(([mode, label]) => (
             <button
               key={mode}
@@ -79,9 +80,11 @@ export default function App() {
             </span>
           )}
           <span>
-            {tool === 'line'
-              ? 'Click to draw · type a length · Enter · Esc cancels · arrows lock an axis'
-              : 'Click a line to select it, then edit or promote it on the right'}
+            {tool === 'line' &&
+              'Click to draw · type a length · Enter · Esc cancels · arrows lock an axis'}
+            {tool === 'select' && 'Click a line to select it, then edit or promote it on the right'}
+            {tool === 'pushpull' &&
+              'Select something first, then drag up or down · type a size and press Enter'}
           </span>
         </div>
       </header>
