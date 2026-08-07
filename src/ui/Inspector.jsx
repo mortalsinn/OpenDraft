@@ -87,6 +87,13 @@ export default function Inspector() {
           </button>
 
           <button
+            onClick={() => promote('wall')}
+            className="mb-1.5 w-full rounded bg-slate-500 px-2 py-1.5 text-xs font-semibold text-slate-950 transition hover:bg-slate-400"
+          >
+            Make this a wall
+          </button>
+
+          <button
             onClick={() => promote('slab')}
             disabled={!chainIsClosed}
             title={chainIsClosed ? undefined : 'A deck needs a closed loop of lines'}

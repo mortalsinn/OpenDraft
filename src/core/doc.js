@@ -28,6 +28,7 @@ import { nodeVertices, withVertices } from './vertices.js'
 import { extendToMeet, trimAt, filletCorner, chamferCorner, retargetNearestEnd } from './edit.js'
 import { blockSegments, blockQuantities, defaultAttributes } from './blocks.js'
 import { rakingGuardQuantities, rakingGuardIssues } from './rake.js'
+import { wallQuantities, wallPlanSegments, WALL_DEFAULTS } from './walls.js'
 import {
   circlePoints,
   arcPoints,
@@ -196,6 +197,31 @@ export const NODE_TYPES = {
       { key: 'nosing', label: 'Nosing', min: 0, max: 3 },
     ],
     pushPull: 'totalRise',
+  },
+
+  /**
+   * A wall: a centreline with a thickness, drawn as its two faces.
+   *
+   * Openings CUT the faces rather than being drawn over them. A door symbol
+   * sitting on an unbroken wall line looks approximately right and is wrong —
+   * the wall is not there, and anything measuring the drawing should be able
+   * to tell.
+   */
+  wall: {
+    label: 'Wall',
+    create: ({ points, start, end, closed = false, openings = [], ...overrides }) => ({
+      points: points ?? (start && end ? [start, end] : []),
+      closed,
+      openings,
+      ...WALL_DEFAULTS,
+      ...overrides,
+    }),
+    quantities: wallQuantities,
+    editable: [
+      { key: 'thickness', label: 'Thickness', min: 1, max: 36 },
+      { key: 'height', label: 'Height', min: 12, max: 240 },
+    ],
+    pushPull: 'height',
   },
 
   /**
@@ -649,6 +675,15 @@ export function listSegments(doc) {
         if (inner.start && inner.end) {
           segments.push({ id: node.id, start: inner.start, end: inner.end })
         }
+      }
+      continue
+    }
+
+    // A wall's faces are what is drawn, so those are what the cursor should
+    // find — snapping to an invisible centreline is baffling.
+    if (node.type === 'wall') {
+      for (const [start, end] of wallPlanSegments(node)) {
+        segments.push({ id: node.id, start, end })
       }
       continue
     }

@@ -11,6 +11,7 @@ import { isVisible } from '../core/layers.js'
 import { instantiate } from '../core/components.js'
 import { SHAPE_TOOLS } from '../core/shapes.js'
 import { blockSegments } from '../core/blocks.js'
+import { wallPlanSegments } from '../core/walls.js'
 import Railing from './Railing.jsx'
 import Slab from './Slab.jsx'
 import Stair from './Stair.jsx'
@@ -252,6 +253,24 @@ function NodeView({ doc, node, selected }) {
       <group>
         {instantiate(doc, node).map((inner) => (
           <NodeView key={inner.id} doc={doc} node={inner} selected={selected} />
+        ))}
+      </group>
+    )
+  }
+
+  if (node.type === 'wall') {
+    return (
+      <group>
+        {wallPlanSegments(node).map(([from, to], i) => (
+          <Line
+            key={i}
+            points={[
+              [from.x, from.y, from.z ?? 0],
+              [to.x, to.y, to.z ?? 0],
+            ]}
+            color={selected ? '#fbbf24' : '#e2e8f0'}
+            lineWidth={selected ? 3 : 2}
+          />
         ))}
       </group>
     )
