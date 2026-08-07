@@ -16,12 +16,28 @@
  * without making every other node pay for it.
  */
 
-import { snapToFraction } from './units.js'
+import { railingQuantities, RAILING_DEFAULTS } from './railing.js'
 
-/** Monotonic id source. Not persisted — ids are regenerated on load. */
+/** Monotonic id source. */
 let nextId = 1
 export function makeId(prefix = 'n') {
   return `${prefix}${nextId++}`
+}
+
+/**
+ * Push the id counter past everything in a loaded document.
+ *
+ * Without this, reopening a saved drawing resets the counter to 1 and the next
+ * edge drawn is handed an id that already exists — silently overwriting an
+ * existing node. Must be called on every load.
+ */
+export function seedIds(doc) {
+  let highest = 0
+  for (const id of Object.keys(doc.nodes ?? {})) {
+    const digits = Number(String(id).replace(/^\D+/, ''))
+    if (Number.isFinite(digits)) highest = Math.max(highest, digits)
+  }
+  nextId = highest + 1
 }
 
 /**
@@ -45,40 +61,26 @@ export const NODE_TYPES = {
 
   /**
    * A railing run built along an edge. The reason this project exists.
+   *
+   * Both the quantities here and the geometry drawn in the scene come from
+   * `layoutRailing`, so the quote cannot drift away from the drawing.
    */
   railingRun: {
     label: 'Railing run',
-    create: ({ start, end, height = 42, postSpacing = 72, picketSpacing = 4 }) => ({
+    create: ({ start, end, ...overrides }) => ({
       start,
       end,
-      height,
-      postSpacing,
-      picketSpacing,
+      ...RAILING_DEFAULTS,
+      ...overrides,
     }),
-    quantities: (node) => {
-      const runLength = distance(node.start, node.end)
-      if (runLength <= 0) return []
-
-      // Posts at both ends plus intermediate posts at no more than postSpacing.
-      const bays = Math.max(1, Math.ceil(runLength / node.postSpacing))
-      const posts = bays + 1
-
-      // Pickets fill the clear space in each bay. Code-driven spacing: the gap
-      // between pickets is what is regulated, not the pitch, so this is a
-      // deliberate under-estimate until the CodeCompass rules land in Phase 3.
-      const pickets = Math.max(0, Math.floor(runLength / node.picketSpacing) - 1)
-
-      return [
-        { sku: 'POST', description: 'Railing post', unit: 'ea', quantity: posts },
-        { sku: 'PICKET', description: 'Picket', unit: 'ea', quantity: pickets },
-        {
-          sku: 'TOPRAIL',
-          description: 'Top rail',
-          unit: 'in',
-          quantity: snapToFraction(runLength),
-        },
-      ]
-    },
+    quantities: railingQuantities,
+    /** Parameters the inspector may edit, with sensible input bounds. */
+    editable: [
+      { key: 'height', label: 'Height', min: 24, max: 60 },
+      { key: 'postSpacing', label: 'Max post spacing', min: 24, max: 144 },
+      { key: 'maxGap', label: 'Max clear gap', min: 1, max: 6 },
+      { key: 'picketWidth', label: 'Picket width', min: 0.25, max: 3 },
+    ],
   },
 }
 
@@ -116,6 +118,32 @@ export function addNode(doc, type, params) {
     nodes: { ...doc.nodes, [id]: node },
     order: [...doc.order, id],
   }
+}
+
+/** Replace a node's parameters, keeping its id and position in the order. */
+export function updateNode(doc, id, changes) {
+  const existing = doc.nodes[id]
+  if (!existing) return doc
+  return { ...doc, nodes: { ...doc.nodes, [id]: { ...existing, ...changes } } }
+}
+
+/**
+ * Change a node's type in place — an edge becoming a railing run, say.
+ * Defining parameters for the new type are filled in from its `create`, but the
+ * id survives so selection and history stay pointed at the same object.
+ */
+export function convertNode(doc, id, type) {
+  const existing = doc.nodes[id]
+  const definition = NODE_TYPES[type]
+  if (!existing || !definition) return doc
+
+  // Strip identity before handing the node to `create`, and reapply it after.
+  // Node types spread their overrides, so leaving `type` in would have the old
+  // type overwrite the new one and the conversion would silently no-op.
+  const { id: _id, type: _type, ...params } = existing
+  const converted = { ...definition.create(params), id, type }
+
+  return { ...doc, nodes: { ...doc.nodes, [id]: converted } }
 }
 
 /** Remove a node by id. */

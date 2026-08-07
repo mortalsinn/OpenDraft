@@ -1,15 +1,21 @@
 import Viewport from './scene/Viewport.jsx'
 import ValueBox from './ui/ValueBox.jsx'
 import TakeoffPanel from './ui/TakeoffPanel.jsx'
+import Inspector from './ui/Inspector.jsx'
 import { useDraft } from './store/useDraft.js'
+
+const SEGMENTED = 'px-3 py-1 text-xs font-medium transition'
 
 export default function App() {
   const view = useDraft((s) => s.view)
   const setView = useDraft((s) => s.setView)
+  const tool = useDraft((s) => s.tool)
+  const setTool = useDraft((s) => s.setTool)
   const snap = useDraft((s) => s.snap)
   const lockedAxis = useDraft((s) => s.lockedAxis)
   const undo = useDraft((s) => s.undo)
   const past = useDraft((s) => s.past)
+  const newDocument = useDraft((s) => s.newDocument)
 
   return (
     <div className="flex h-screen w-screen flex-col bg-slate-950 text-slate-100">
@@ -19,11 +25,28 @@ export default function App() {
         </span>
 
         <div className="flex overflow-hidden rounded-md ring-1 ring-white/10">
+          {[
+            ['line', 'Line'],
+            ['select', 'Select'],
+          ].map(([mode, label]) => (
+            <button
+              key={mode}
+              onClick={() => setTool(mode)}
+              className={`${SEGMENTED} ${
+                tool === mode ? 'bg-sky-500 text-slate-950' : 'text-slate-400 hover:text-slate-100'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
+        <div className="flex overflow-hidden rounded-md ring-1 ring-white/10">
           {['plan', '3d'].map((mode) => (
             <button
               key={mode}
               onClick={() => setView(mode)}
-              className={`px-3 py-1 text-xs font-medium transition ${
+              className={`${SEGMENTED} ${
                 view === mode ? 'bg-amber-500 text-slate-950' : 'text-slate-400 hover:text-slate-100'
               }`}
             >
@@ -40,6 +63,15 @@ export default function App() {
           Undo
         </button>
 
+        <button
+          onClick={() => {
+            if (confirm('Discard this drawing and start over?')) newDocument()
+          }}
+          className="rounded px-2 py-1 text-xs text-slate-400 ring-1 ring-white/10 transition hover:text-slate-100"
+        >
+          New
+        </button>
+
         <div className="ml-auto flex items-center gap-3 text-xs text-slate-500">
           {lockedAxis && (
             <span className="rounded bg-amber-500/15 px-2 py-0.5 font-medium text-amber-300">
@@ -47,7 +79,9 @@ export default function App() {
             </span>
           )}
           <span>
-            Click to draw · type a length · <kbd>Enter</kbd> · <kbd>Esc</kbd> cancels · arrows lock an axis
+            {tool === 'line'
+              ? 'Click to draw · type a length · Enter · Esc cancels · arrows lock an axis'
+              : 'Click a line to select it, then edit or promote it on the right'}
           </span>
         </div>
       </header>
@@ -64,7 +98,10 @@ export default function App() {
             )}
           </div>
         </main>
-        <TakeoffPanel />
+        <aside className="flex w-72 shrink-0 flex-col overflow-y-auto border-l border-white/10 bg-slate-900/60">
+          <Inspector />
+          <TakeoffPanel />
+        </aside>
       </div>
     </div>
   )

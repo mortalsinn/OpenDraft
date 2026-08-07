@@ -1,6 +1,15 @@
 import { create } from 'zustand'
-import { createDocument, addNode, computeTakeoff, listSegments } from '../core/doc.js'
+import {
+  createDocument,
+  addNode,
+  updateNode,
+  convertNode,
+  removeNode,
+  computeTakeoff,
+  listSegments,
+} from '../core/doc.js'
 import { parseLength, snapToFraction } from '../core/units.js'
+import { saveDocument, loadDocument, clearDocument } from '../core/persist.js'
 
 /**
  * Interaction state.
@@ -11,10 +20,12 @@ import { parseLength, snapToFraction } from '../core/units.js'
  * alongside it but is never part of history.
  */
 export const useDraft = create((set, get) => ({
-  doc: createDocument(),
+  doc: loadDocument(),
   past: [],
   future: [],
 
+  /** Id of the selected node, or null. */
+  selection: null,
   tool: 'line',
   /** Where the in-progress line began, or null when not drawing. */
   anchor: null,
@@ -28,40 +39,80 @@ export const useDraft = create((set, get) => ({
   gridStep: 12,
 
   setTool: (tool) => set({ tool, anchor: null, typed: '', lockedAxis: null }),
+  select: (selection) => set({ selection }),
   setView: (view) => set({ view }),
   setSnap: (snap) => set({ snap }),
   setTyped: (typed) => set({ typed }),
   setLockedAxis: (lockedAxis) => set({ lockedAxis }),
 
-  /** Push a new document onto history. */
-  commit: (nextDoc) =>
+  /** Push a new document onto history, and persist it. */
+  commit: (nextDoc) => {
+    saveDocument(nextDoc)
     set((state) => ({
       doc: nextDoc,
       past: [...state.past, state.doc],
       future: [],
-    })),
+    }))
+  },
+
+  /** Turn the selected edge into a railing run. */
+  promoteSelection: (type) => {
+    const { selection, doc, commit } = get()
+    if (!selection || !doc.nodes[selection]) return
+    commit(convertNode(doc, selection, type))
+  },
+
+  /** Edit one parameter of the selected node. */
+  editSelection: (key, value) => {
+    const { selection, doc, commit } = get()
+    if (!selection || !doc.nodes[selection]) return
+    if (!Number.isFinite(value)) return
+    commit(updateNode(doc, selection, { [key]: value }))
+  },
+
+  deleteSelection: () => {
+    const { selection, doc, commit } = get()
+    if (!selection || !doc.nodes[selection]) return
+    commit(removeNode(doc, selection))
+    set({ selection: null })
+  },
+
+  /** Throw the drawing away and start over. */
+  newDocument: () => {
+    clearDocument()
+    const doc = createDocument()
+    saveDocument(doc)
+    set({ doc, past: [], future: [], selection: null, anchor: null, typed: '' })
+  },
 
   undo: () =>
     set((state) => {
       if (!state.past.length) return state
+      const doc = state.past[state.past.length - 1]
+      // Persist here too, or a refresh after undo resurrects the undone work.
+      saveDocument(doc)
       return {
-        doc: state.past[state.past.length - 1],
+        doc,
         past: state.past.slice(0, -1),
         future: [state.doc, ...state.future],
         anchor: null,
         typed: '',
+        selection: doc.nodes[state.selection] ? state.selection : null,
       }
     }),
 
   redo: () =>
     set((state) => {
       if (!state.future.length) return state
+      const doc = state.future[0]
+      saveDocument(doc)
       return {
-        doc: state.future[0],
+        doc,
         past: [...state.past, state.doc],
         future: state.future.slice(1),
         anchor: null,
         typed: '',
+        selection: doc.nodes[state.selection] ? state.selection : null,
       }
     }),
 
@@ -70,8 +121,15 @@ export const useDraft = create((set, get) => ({
    * edge and — SketchUp-style — leaves the anchor at the new end so runs chain
    * without re-clicking.
    */
-  clickPoint: (point) => {
-    const { anchor, commit, doc } = get()
+  clickPoint: (point, snapRefs = []) => {
+    const { anchor, commit, doc, tool } = get()
+
+    if (tool === 'select') {
+      // The inference engine already worked out which node is under the
+      // cursor, so selection reuses that rather than hit-testing twice.
+      set({ selection: snapRefs[0] ?? null })
+      return
+    }
 
     if (!anchor) {
       set({ anchor: point, typed: '' })

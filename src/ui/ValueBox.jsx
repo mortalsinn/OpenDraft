@@ -24,6 +24,17 @@ export default function ValueBox() {
 
   useEffect(() => {
     const onKeyDown = (event) => {
+      // The value box swallows bare keystrokes from anywhere on the page, so it
+      // has to stand down while the user is typing into a real field —
+      // otherwise entering "42" in the inspector also draws a 42" line.
+      const target = event.target
+      if (
+        target instanceof HTMLElement &&
+        (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)
+      ) {
+        return
+      }
+
       const meta = event.metaKey || event.ctrlKey
 
       if (meta && event.key.toLowerCase() === 'z') {

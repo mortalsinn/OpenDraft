@@ -61,13 +61,22 @@ contract all pick it up without further plumbing.
 
 ## Status
 
-**Phase 1 — the feel.** Done.
-Units engine, document model, plan/orbit cameras, inference engine, line tool,
-value box, live takeoff panel.
+**Phase 1 — the feel.** Done. Units engine, document model, plan/orbit cameras,
+inference engine, line tool, value box.
 
-- Phase 2 — faces from closed loops; push/pull as a parameter edit
-- Phase 3 — object catalog: RailingRun, Wall, Slab, StairRun; CodeCompass rules
-  driving picket spacing
+**Phase 2 — the drawing becomes the quote.** Done. Select tool, promote an edge
+to a `RailingRun`, real 3D posts and pickets, a parameter inspector, and live
+quantities. Drawings persist across reloads.
+
+Draw a line, select it, hit *Make this a railing run*, and a 20' run resolves to
+5 posts and 48 pickets at a 3 25/32" gap. Tighten the max gap to 2" and it
+becomes 84 pickets at 1 29/32" — geometry and quote move together because they
+read the same function.
+
+Next:
+
+- Phase 3 — the rest of the catalog: Wall, Slab, StairRun; real CodeCompass
+  rules replacing the hard-coded `maxGap`; corners and multi-segment runs
 - Phase 4 — dimensioned PDF export and the AscendOS estimator handoff
 
 ## Running it
@@ -82,7 +91,8 @@ npm test        # units + inference
 
 | | |
 |---|---|
-| Left click | place a point; the run chains from the last one |
+| Left click (Line tool) | place a point; the run chains from the last one |
+| Left click (Select tool) | select a line, then edit or promote it on the right |
 | Type a number, Enter | commit an exact length along the inferred direction |
 | Arrow keys | lock to an axis |
 | Esc | abandon the line in progress |

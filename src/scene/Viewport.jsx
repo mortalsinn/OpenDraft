@@ -6,6 +6,7 @@ import { useDraft } from '../store/useDraft.js'
 import { infer } from '../core/inference.js'
 import { formatLength } from '../core/units.js'
 import { distance } from '../core/doc.js'
+import Railing from './Railing.jsx'
 
 // Z-up, like every CAD tool and like SketchUp. Plan view then looks straight
 // down -Z and 2D drafting happens on the XY plane, which keeps the plan-view
@@ -109,7 +110,7 @@ function PointerBridge() {
       // Ignore the click that ends an orbit/pan drag.
       if (event.detail === 0) return
       const { snap, clickPoint } = useDraft.getState()
-      if (snap) clickPoint(snap.point)
+      if (snap) clickPoint(snap.point, snap.refs)
     }
 
     canvas.addEventListener('pointermove', onMove)
@@ -171,26 +172,48 @@ function SnapMarker({ scaleRef }) {
   )
 }
 
-/** Committed geometry. */
+/** Committed geometry: plain edges as lines, railing runs as real 3D. */
 function Geometry() {
   const doc = useDraft((s) => s.doc)
+  const selection = useDraft((s) => s.selection)
 
-  const segments = useMemo(
+  const nodes = useMemo(
     () => Object.values(doc.nodes).filter((n) => n.start && n.end),
     [doc],
   )
 
-  return segments.map((segment) => (
-    <Line
-      key={segment.id}
-      points={[
-        [segment.start.x, segment.start.y, segment.start.z ?? 0],
-        [segment.end.x, segment.end.y, segment.end.z ?? 0],
-      ]}
-      color="#e2e8f0"
-      lineWidth={2}
-    />
-  ))
+  return nodes.map((node) => {
+    const selected = node.id === selection
+
+    if (node.type === 'railingRun') {
+      return (
+        <group key={node.id}>
+          <Railing node={node} selected={selected} />
+          {/* The footprint line stays, so plan view still reads as a drawing. */}
+          <Line
+            points={[
+              [node.start.x, node.start.y, 0],
+              [node.end.x, node.end.y, 0],
+            ]}
+            color={selected ? '#fbbf24' : '#64748b'}
+            lineWidth={selected ? 3 : 1}
+          />
+        </group>
+      )
+    }
+
+    return (
+      <Line
+        key={node.id}
+        points={[
+          [node.start.x, node.start.y, node.start.z ?? 0],
+          [node.end.x, node.end.y, node.end.z ?? 0],
+        ]}
+        color={selected ? '#fbbf24' : '#e2e8f0'}
+        lineWidth={selected ? 4 : 2}
+      />
+    )
+  })
 }
 
 /** The line being drawn right now, from the anchor to the inferred point. */
@@ -250,10 +273,15 @@ export default function Viewport() {
   //
   // Polled rather than fired once because the nudge has to land after R3F has
   // attached its own listener. Stops as soon as the drawing buffer matches the
-  // element, and gives up after a second so a genuinely zero-sized container
-  // can't spin forever. In a normal browser the first check already passes.
+  // element, and gives up after a few seconds so a genuinely zero-sized
+  // container can't spin forever. In a normal browser the first check passes
+  // and this never fires at all.
+  //
+  // The interval is deliberately slower than R3F's own resize debounce: nudging
+  // faster than it settles just restarts the debounce timer every tick, and the
+  // measurement never lands.
   useEffect(() => {
-    const deadline = performance.now() + 1000
+    const deadline = performance.now() + 5000
 
     const id = setInterval(() => {
       const canvas = hostRef.current?.querySelector('canvas')
@@ -265,7 +293,7 @@ export default function Viewport() {
         return
       }
       window.dispatchEvent(new Event('resize'))
-    }, 50)
+    }, 200)
 
     return () => clearInterval(id)
   }, [view])

@@ -20,7 +20,7 @@ export default function TakeoffPanel() {
     .reduce((sum, n) => sum + Math.hypot(n.end.x - n.start.x, n.end.y - n.start.y, (n.end.z ?? 0) - (n.start.z ?? 0)), 0)
 
   return (
-    <aside className="flex w-64 shrink-0 flex-col border-l border-white/10 bg-slate-900/60">
+    <div className="flex min-h-0 flex-1 flex-col">
       <header className="border-b border-white/10 px-4 py-3">
         <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-400">Takeoff</h2>
       </header>
@@ -51,7 +51,7 @@ export default function TakeoffPanel() {
           </table>
         )}
       </div>
-    </aside>
+    </div>
   )
 }
 
