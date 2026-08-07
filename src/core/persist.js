@@ -8,6 +8,7 @@
  */
 
 import { createDocument, seedIds, migrateDocument } from './doc.js'
+import { seedDefinitionIds } from './components.js'
 
 const STORAGE_KEY = 'opendraft.document.v1'
 
@@ -50,9 +51,10 @@ export function loadDocument() {
     const migrated = migrateDocument(parsed)
     if (!migrated) return createDocument()
 
-    // Critical: move the id counter past everything loaded, or the next node
-    // drawn silently overwrites an existing one.
+    // Critical: move the id counters past everything loaded, or the next node
+    // drawn — or component made — silently overwrites an existing one.
     seedIds(migrated)
+    seedDefinitionIds(migrated)
     return migrated
   } catch {
     return createDocument()

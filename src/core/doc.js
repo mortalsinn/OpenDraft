@@ -22,6 +22,8 @@ import { polygonArea, polygonAreaSquareFeet, polygonPerimeter } from './polygon.
 import { stairQuantities, stairIssues, STAIR_DEFAULTS } from './stairs.js'
 import { getRules, DEFAULT_JURISDICTION } from './code.js'
 import { defaultLayers, DEFAULT_LAYER_ID, countsInTakeoff, isSelectable } from './layers.js'
+import { instantiate, extractDefinition } from './components.js'
+import { nodeVertices, withVertices } from './vertices.js'
 
 /** Monotonic id source. */
 let nextId = 1
@@ -169,6 +171,18 @@ export const NODE_TYPES = {
     editable: [{ key: 'offset', label: 'Offset', min: -240, max: 240 }],
   },
 
+  /**
+   * A placed instance of a component definition. Carries no geometry of its
+   * own — it points at a definition and says where and which way round.
+   */
+  componentInstance: {
+    label: 'Component',
+    create: ({ definitionId, position, rotation = 0 }) => ({ definitionId, position, rotation }),
+    // Quantities come from expanding the definition; see computeTakeoff.
+    quantities: () => [],
+    editable: [{ key: 'rotation', label: 'Rotation', min: -Math.PI * 2, max: Math.PI * 2 }],
+  },
+
   /** A text note, optionally with a leader pointing at something. */
   note: {
     label: 'Note',
@@ -193,6 +207,7 @@ export function createDocument() {
     units: 'imperial',
     jurisdiction: DEFAULT_JURISDICTION,
     ...defaultLayers(),
+    definitions: {},
     nodes: {},
     order: [],
   }
@@ -289,22 +304,7 @@ export function removeNode(doc, id) {
   return { ...doc, nodes, order: doc.order.filter((n) => n !== id) }
 }
 
-/** The movable vertices of a node, whatever shape it stores them in. */
-export function nodeVertices(node) {
-  if (!node) return []
-  if (Array.isArray(node.points)) return node.points
-  if (node.start && node.end) return [node.start, node.end]
-  if (node.position) return [node.position]
-  return []
-}
-
-/** Write vertices back in whatever shape the node uses. */
-function withVertices(node, vertices) {
-  if (Array.isArray(node.points)) return { ...node, points: vertices }
-  if (node.start && node.end) return { ...node, start: vertices[0], end: vertices[1] }
-  if (node.position) return { ...node, position: vertices[0] }
-  return node
-}
+export { nodeVertices }
 
 /** Move one vertex of a node to an absolute position. */
 export function moveVertex(doc, id, index, point) {
@@ -373,6 +373,20 @@ export function listSegments(doc) {
     // locked — so hidden and locked layers are simply absent from inference.
     if (!isSelectable(doc, node)) continue
 
+    // Instances expose their definition's spans so you can snap to a placed
+    // component, with the INSTANCE's id so a click selects what you clicked.
+    if (node.type === 'componentInstance') {
+      for (const inner of instantiate(doc, node)) {
+        for (const [start, end] of railingSegments(inner)) {
+          segments.push({ id: node.id, start, end })
+        }
+        if (inner.start && inner.end) {
+          segments.push({ id: node.id, start: inner.start, end: inner.end })
+        }
+      }
+      continue
+    }
+
     if (node.points?.length >= 2) {
       for (const [start, end] of railingSegments(node)) {
         segments.push({ id: node.id, start, end })
@@ -386,7 +400,7 @@ export function listSegments(doc) {
 }
 
 /** The current document schema. Bump when a load-time migration is needed. */
-export const SCHEMA_VERSION = 3
+export const SCHEMA_VERSION = 4
 
 /**
  * Bring an older document up to the current schema.
@@ -425,7 +439,63 @@ export function migrateDocument(doc) {
     migrated = { ...migrated, schemaVersion: 3, ...defaultLayers(), nodes }
   }
 
+  // v3 -> v4: component definitions. Nothing to convert; older documents
+  // simply had none.
+  if (migrated.schemaVersion === 3) {
+    migrated = { ...migrated, schemaVersion: 4, definitions: migrated.definitions ?? {} }
+  }
+
   return migrated.schemaVersion === SCHEMA_VERSION ? migrated : null
+}
+
+/**
+ * Quantities for one placed instance — its definition's, once.
+ *
+ * Lives here rather than in components.js because it needs the node-type
+ * registry, and having the two modules import each other would be a cycle.
+ */
+export function instanceQuantities(doc, instance) {
+  const lines = []
+
+  for (const node of instantiate(doc, instance)) {
+    const quantities = NODE_TYPES[node.type]?.quantities
+    if (quantities) lines.push(...quantities(node))
+  }
+
+  return lines
+}
+
+/**
+ * Turn the selected node into a reusable component, leaving an instance where
+ * it was. The definition holds geometry relative to its own origin, so placing
+ * a second instance is a reference rather than a copy.
+ */
+export function makeComponent(doc, nodeId, name) {
+  const node = doc.nodes[nodeId]
+  if (!node || node.type === 'componentInstance') return doc
+
+  const extracted = extractDefinition(node, name)
+  if (!extracted) return doc
+
+  const { definition, origin } = extracted
+  const instance = {
+    id: nodeId,
+    type: 'componentInstance',
+    layer: node.layer,
+    ...NODE_TYPES.componentInstance.create({ definitionId: definition.id, position: origin }),
+  }
+
+  return {
+    ...doc,
+    definitions: { ...(doc.definitions ?? {}), [definition.id]: definition },
+    nodes: { ...doc.nodes, [nodeId]: instance },
+  }
+}
+
+/** Place another instance of an existing definition. */
+export function placeInstance(doc, definitionId, position, rotation = 0) {
+  if (!doc.definitions?.[definitionId]) return doc
+  return addNode(doc, 'componentInstance', { definitionId, position, rotation })
 }
 
 /**
@@ -459,10 +529,17 @@ export function computeTakeoff(doc) {
     // a layer out of the quote.
     if (!countsInTakeoff(doc, node)) continue
 
-    const definition = NODE_TYPES[node.type]
-    if (!definition?.quantities) continue
+    // An instance stands for its definition's geometry, so its quantities come
+    // from expanding it — twelve instances of a post assembly are twelve
+    // assemblies' worth of material, not one.
+    const lines =
+      node.type === 'componentInstance'
+        ? instanceQuantities(doc, node)
+        : NODE_TYPES[node.type]?.quantities?.(node)
 
-    for (const line of definition.quantities(node)) {
+    if (!lines) continue
+
+    for (const line of lines) {
       const existing = merged.get(line.sku)
       if (existing) {
         existing.quantity += line.quantity

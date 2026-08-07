@@ -8,6 +8,7 @@ import { formatLength } from '../core/units.js'
 import { distance, listSegments } from '../core/doc.js'
 import { railingSegments } from '../core/railing.js'
 import { isVisible } from '../core/layers.js'
+import { instantiate } from '../core/components.js'
 import Railing from './Railing.jsx'
 import Slab from './Slab.jsx'
 import Stair from './Stair.jsx'
@@ -216,7 +217,77 @@ function SnapMarker({ scaleRef }) {
   )
 }
 
-/** Committed geometry: plain edges as lines, railing runs as real 3D. */
+/**
+ * One node, drawn.
+ *
+ * Shared by the top-level scene and by component instances: a component is a
+ * REFERENCE to geometry, not a different kind of geometry, so its contents go
+ * through exactly the same renderers.
+ */
+function NodeView({ doc, node, selected }) {
+  if (node.type === 'dimension') {
+    return <Dimension doc={doc} node={node} selected={selected} />
+  }
+
+  if (node.type === 'note') {
+    return <Note node={node} selected={selected} />
+  }
+
+  if (node.type === 'componentInstance') {
+    return (
+      <group>
+        {instantiate(doc, node).map((inner) => (
+          <NodeView key={inner.id} doc={doc} node={inner} selected={selected} />
+        ))}
+      </group>
+    )
+  }
+
+  if (node.type === 'slab') {
+    return <Slab node={node} selected={selected} />
+  }
+
+  if (node.type === 'stairRun') {
+    return <Stair node={node} selected={selected} />
+  }
+
+  if (node.type === 'railingRun') {
+    return (
+      <group>
+        <Railing node={node} selected={selected} />
+        {/* The footprint stays, so plan view still reads as a drawing. */}
+        {railingSegments(node).map(([from, to], i) => (
+          <Line
+            key={i}
+            points={[
+              [from.x, from.y, from.z ?? 0],
+              [to.x, to.y, to.z ?? 0],
+            ]}
+            color={selected ? '#fbbf24' : '#64748b'}
+            lineWidth={selected ? 3 : 1}
+          />
+        ))}
+      </group>
+    )
+  }
+
+  if (node.start && node.end) {
+    return (
+      <Line
+        points={[
+          [node.start.x, node.start.y, node.start.z ?? 0],
+          [node.end.x, node.end.y, node.end.z ?? 0],
+        ]}
+        color={selected ? '#fbbf24' : '#e2e8f0'}
+        lineWidth={selected ? 4 : 2}
+      />
+    )
+  }
+
+  return null
+}
+
+/** Everything in the document that is currently on a visible layer. */
 function Geometry() {
   const doc = useDraft((s) => s.doc)
   const selection = useDraft((s) => s.selection)
@@ -228,60 +299,9 @@ function Geometry() {
     [doc],
   )
 
-  return nodes.map((node) => {
-    const selected = node.id === selection
-
-    if (node.type === 'dimension') {
-      return <Dimension key={node.id} doc={doc} node={node} selected={selected} />
-    }
-
-    if (node.type === 'note') {
-      return <Note key={node.id} node={node} selected={selected} />
-    }
-
-    // Everything below needs geometry to draw.
-    if (!node.start && !(node.points?.length >= 2)) return null
-
-    if (node.type === 'slab') {
-      return <Slab key={node.id} node={node} selected={selected} />
-    }
-
-    if (node.type === 'stairRun') {
-      return <Stair key={node.id} node={node} selected={selected} />
-    }
-
-    if (node.type === 'railingRun') {
-      return (
-        <group key={node.id}>
-          <Railing node={node} selected={selected} />
-          {/* The footprint stays, so plan view still reads as a drawing. */}
-          {railingSegments(node).map(([from, to], i) => (
-            <Line
-              key={i}
-              points={[
-                [from.x, from.y, from.z ?? 0],
-                [to.x, to.y, to.z ?? 0],
-              ]}
-              color={selected ? '#fbbf24' : '#64748b'}
-              lineWidth={selected ? 3 : 1}
-            />
-          ))}
-        </group>
-      )
-    }
-
-    return (
-      <Line
-        key={node.id}
-        points={[
-          [node.start.x, node.start.y, node.start.z ?? 0],
-          [node.end.x, node.end.y, node.end.z ?? 0],
-        ]}
-        color={selected ? '#fbbf24' : '#e2e8f0'}
-        lineWidth={selected ? 4 : 2}
-      />
-    )
-  })
+  return nodes.map((node) => (
+    <NodeView key={node.id} doc={doc} node={node} selected={node.id === selection} />
+  ))
 }
 
 /** The line being drawn right now, from the anchor to the inferred point. */

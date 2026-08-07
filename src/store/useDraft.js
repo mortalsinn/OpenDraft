@@ -12,6 +12,8 @@ import {
   translateNode,
   computeTakeoff,
   listSegments,
+  makeComponent,
+  placeInstance,
   NODE_TYPES,
 } from '../core/doc.js'
 import { parseLength, snapToFraction } from '../core/units.js'
@@ -91,6 +93,19 @@ export const useDraft = create((set, get) => ({
     commit(removeLayer(doc, id))
     if (activeLayer === id) set({ activeLayer: DEFAULT_LAYER_ID })
   },
+
+  /** Turn the selection into a reusable component, leaving an instance behind. */
+  makeComponentFromSelection: (name) => {
+    const { doc, commit, selection } = get()
+    if (!selection) return
+    commit(makeComponent(doc, selection, name || 'Component'))
+  },
+
+  /**
+   * Arm the component tool with a definition. The next click places one.
+   */
+  pendingDefinition: null,
+  setPendingDefinition: (pendingDefinition) => set({ pendingDefinition, tool: 'component' }),
 
   /** Move the selected object onto a layer. */
   assignSelectionToLayer: (layerId) => {
@@ -323,6 +338,12 @@ export const useDraft = create((set, get) => ({
 
       commit(addNode(doc, 'dimension', { from: pendingAnchor, to: anchor, layer: get().activeLayer }))
       set({ pendingAnchor: null })
+      return
+    }
+
+    if (tool === 'component') {
+      const { pendingDefinition } = get()
+      if (pendingDefinition) commit(placeInstance(doc, pendingDefinition, point))
       return
     }
 
