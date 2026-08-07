@@ -7,6 +7,11 @@
  * `quantities()` counted them another, the drawing would stop being the quote,
  * and the entire premise of the product would be a lie you only discover on a
  * job site.
+ *
+ * A run is a POLYLINE, not a single segment. A deck perimeter drawn as four
+ * chained lines is one run whose corners are single shared posts — treating it
+ * as four independent runs puts two posts at every corner and quotes four
+ * posts that will never be bought.
  */
 
 /** Defaults in inches. Overridable per node. */
@@ -29,8 +34,32 @@ const lerp = (a, b, t) => ({
   z: (a.z ?? 0) + ((b.z ?? 0) - (a.z ?? 0)) * t,
 })
 
-function runLengthOf(start, end) {
-  return Math.hypot(end.x - start.x, end.y - start.y, (end.z ?? 0) - (start.z ?? 0))
+const dist = (a, b) => Math.hypot(b.x - a.x, b.y - a.y, (b.z ?? 0) - (a.z ?? 0))
+
+/**
+ * The points of a run, tolerating the older single-segment shape.
+ * Documents are migrated on load, but node helpers are called from enough
+ * places that being forgiving here is cheaper than auditing all of them.
+ */
+export function railingPoints(node) {
+  if (Array.isArray(node.points) && node.points.length >= 2) return node.points
+  if (node.start && node.end) return [node.start, node.end]
+  return []
+}
+
+/** The straight spans of a run, including the closing span when it is a loop. */
+export function railingSegments(node) {
+  const points = railingPoints(node)
+  const segments = []
+
+  for (let i = 0; i < points.length - 1; i++) {
+    segments.push([points[i], points[i + 1]])
+  }
+  if (node.closed && points.length > 2) {
+    segments.push([points[points.length - 1], points[0]])
+  }
+
+  return segments
 }
 
 /**
@@ -53,52 +82,96 @@ export function picketsInBay(clear, picketWidth, maxGap) {
 /**
  * Resolve a railing node into concrete geometry.
  *
+ * Corner posts sit at every vertex and are emitted ONCE, however many spans
+ * meet there.
+ *
  * @returns {{
- *   runLength: number,
- *   bays: number,
- *   posts: {x,y,z}[],       // base centres
- *   pickets: {x,y,z}[],     // base centres
- *   gap: number,            // actual clear gap achieved
- *   height: number,
- *   postWidth: number,
- *   picketWidth: number,
+ *   runLength: number, bays: number,
+ *   posts: {x,y,z}[], pickets: {x,y,z}[],
+ *   rails: [{x,y,z},{x,y,z}][],
+ *   gap: number, height: number, postWidth: number, picketWidth: number,
  * }}
  */
 export function layoutRailing(node) {
   const settings = { ...RAILING_DEFAULTS, ...node }
-  const { start, end, height, postSpacing, postWidth, picketWidth, maxGap } = settings
+  const { height, postSpacing, postWidth, picketWidth, maxGap } = settings
 
-  const runLength = runLengthOf(start, end)
-  if (runLength <= 0) {
-    return { runLength: 0, bays: 0, posts: [], pickets: [], gap: 0, height, postWidth, picketWidth }
+  const points = railingPoints(node)
+  const segments = railingSegments(node)
+
+  const empty = {
+    runLength: 0,
+    bays: 0,
+    posts: [],
+    pickets: [],
+    rails: [],
+    gap: 0,
+    height,
+    postWidth,
+    picketWidth,
   }
+  if (!segments.length) return empty
 
-  // Even out the bays rather than leaving a short remainder at one end — that
-  // is what a fabricator would actually do, and it keeps the drawing honest.
-  const bays = Math.max(1, Math.ceil(runLength / postSpacing))
   const posts = []
-  for (let i = 0; i <= bays; i++) {
-    posts.push(lerp(start, end, i / bays))
-  }
-
-  const baySpan = runLength / bays
-  const clear = Math.max(0, baySpan - postWidth)
-  const perBay = picketsInBay(clear, picketWidth, maxGap)
-
-  // Actual gap achieved, for display — usually a little under maxGap.
-  const gap = perBay > 0 ? (clear - perBay * picketWidth) / (perBay + 1) : clear
-
   const pickets = []
-  for (let bay = 0; bay < bays; bay++) {
-    const bayStartDistance = bay * baySpan + postWidth / 2
-    for (let i = 0; i < perBay; i++) {
-      // Each picket sits after (i+1) gaps and i preceding pickets.
-      const offset = bayStartDistance + (i + 1) * gap + (i + 0.5) * picketWidth
-      pickets.push(lerp(start, end, offset / runLength))
+  const rails = []
+  let runLength = 0
+  let bays = 0
+  let tightestGap = Infinity
+
+  // Degenerate input (a run of zero length) has no geometry at all, and would
+  // otherwise emit stacked posts at a single point.
+  const spans = segments.filter(([from, to]) => dist(from, to) > 0)
+  if (!spans.length) return empty
+
+  // Each span contributes its OPENING vertex plus its intermediates, and the
+  // closing vertex is left to the next span. That counts every corner exactly
+  // once while keeping the posts ordered along the run.
+  for (const [from, to] of spans) {
+    const spanLength = dist(from, to)
+
+    runLength += spanLength
+    rails.push([from, to])
+    posts.push({ ...from })
+
+    const spanBays = Math.max(1, Math.ceil(spanLength / postSpacing))
+    bays += spanBays
+
+    // Intermediate posts only — the two ends are already covered by vertices.
+    for (let i = 1; i < spanBays; i++) {
+      posts.push(lerp(from, to, i / spanBays))
+    }
+
+    const baySpan = spanLength / spanBays
+    const clear = Math.max(0, baySpan - postWidth)
+    const perBay = picketsInBay(clear, picketWidth, maxGap)
+    const gap = perBay > 0 ? (clear - perBay * picketWidth) / (perBay + 1) : clear
+    if (perBay > 0) tightestGap = Math.min(tightestGap, gap)
+
+    for (let bay = 0; bay < spanBays; bay++) {
+      const bayStart = bay * baySpan + postWidth / 2
+      for (let i = 0; i < perBay; i++) {
+        const offset = bayStart + (i + 1) * gap + (i + 0.5) * picketWidth
+        pickets.push(lerp(from, to, offset / spanLength))
+      }
     }
   }
 
-  return { runLength, bays, posts, pickets, gap, height, postWidth, picketWidth }
+  // An open run finishes on a post; a closed one has already placed it as the
+  // opening vertex of the first span.
+  if (!node.closed) posts.push({ ...spans[spans.length - 1][1] })
+
+  return {
+    runLength,
+    bays,
+    posts,
+    pickets,
+    rails,
+    gap: Number.isFinite(tightestGap) ? tightestGap : 0,
+    height,
+    postWidth,
+    picketWidth,
+  }
 }
 
 /**

@@ -4,6 +4,7 @@ import {
   addNode,
   updateNode,
   convertNode,
+  promoteChain,
   removeNode,
   computeTakeoff,
   listSegments,
@@ -55,11 +56,16 @@ export const useDraft = create((set, get) => ({
     }))
   },
 
-  /** Turn the selected edge into a railing run. */
+  /**
+   * Turn the selected edge — and everything chained to it — into one run.
+   * Falls back to a plain conversion for anything that is not a raw edge.
+   */
   promoteSelection: (type) => {
     const { selection, doc, commit } = get()
-    if (!selection || !doc.nodes[selection]) return
-    commit(convertNode(doc, selection, type))
+    const node = selection && doc.nodes[selection]
+    if (!node) return
+
+    commit(node.type === 'edge' ? promoteChain(doc, selection, type) : convertNode(doc, selection, type))
   },
 
   /** Edit one parameter of the selected node. */

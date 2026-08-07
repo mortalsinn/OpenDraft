@@ -6,6 +6,7 @@ import { useDraft } from '../store/useDraft.js'
 import { infer } from '../core/inference.js'
 import { formatLength } from '../core/units.js'
 import { distance } from '../core/doc.js'
+import { railingSegments } from '../core/railing.js'
 import Railing from './Railing.jsx'
 
 // Z-up, like every CAD tool and like SketchUp. Plan view then looks straight
@@ -178,7 +179,7 @@ function Geometry() {
   const selection = useDraft((s) => s.selection)
 
   const nodes = useMemo(
-    () => Object.values(doc.nodes).filter((n) => n.start && n.end),
+    () => Object.values(doc.nodes).filter((n) => (n.start && n.end) || n.points?.length >= 2),
     [doc],
   )
 
@@ -189,15 +190,18 @@ function Geometry() {
       return (
         <group key={node.id}>
           <Railing node={node} selected={selected} />
-          {/* The footprint line stays, so plan view still reads as a drawing. */}
-          <Line
-            points={[
-              [node.start.x, node.start.y, 0],
-              [node.end.x, node.end.y, 0],
-            ]}
-            color={selected ? '#fbbf24' : '#64748b'}
-            lineWidth={selected ? 3 : 1}
-          />
+          {/* The footprint stays, so plan view still reads as a drawing. */}
+          {railingSegments(node).map(([from, to], i) => (
+            <Line
+              key={i}
+              points={[
+                [from.x, from.y, from.z ?? 0],
+                [to.x, to.y, to.z ?? 0],
+              ]}
+              color={selected ? '#fbbf24' : '#64748b'}
+              lineWidth={selected ? 3 : 1}
+            />
+          ))}
         </group>
       )
     }

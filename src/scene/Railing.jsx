@@ -13,15 +13,11 @@ import { layoutRailing } from '../core/railing.js'
  */
 export default function Railing({ node, selected }) {
   const layout = useMemo(() => layoutRailing(node), [node])
-  const { posts, pickets, height, postWidth, picketWidth } = layout
+  const { posts, pickets, rails, height, postWidth, picketWidth } = layout
 
   if (!posts.length) return null
 
   const color = selected ? '#fbbf24' : '#94a3b8'
-  const railTop = height
-  // Top rail spans post centre to post centre at full height.
-  const first = posts[0]
-  const last = posts[posts.length - 1]
 
   return (
     <group>
@@ -29,7 +25,7 @@ export default function Railing({ node, selected }) {
         <boxGeometry args={[postWidth, postWidth, height]} />
         <meshStandardMaterial color={selected ? '#f59e0b' : '#cbd5e1'} />
         {posts.map((post, i) => (
-          <Instance key={i} position={[post.x, post.y, height / 2]} />
+          <Instance key={i} position={[post.x, post.y, (post.z ?? 0) + height / 2]} />
         ))}
       </Instances>
 
@@ -38,19 +34,23 @@ export default function Railing({ node, selected }) {
           <boxGeometry args={[picketWidth, picketWidth, height - 2]} />
           <meshStandardMaterial color={color} />
           {pickets.map((picket, i) => (
-            <Instance key={i} position={[picket.x, picket.y, (height - 2) / 2]} />
+            <Instance key={i} position={[picket.x, picket.y, (picket.z ?? 0) + (height - 2) / 2]} />
           ))}
         </Instances>
       )}
 
-      <Line
-        points={[
-          [first.x, first.y, railTop],
-          [last.x, last.y, railTop],
-        ]}
-        color={selected ? '#fbbf24' : '#e2e8f0'}
-        lineWidth={4}
-      />
+      {/* One rail per span, so the top rail turns the corners with the run. */}
+      {rails.map(([from, to], i) => (
+        <Line
+          key={i}
+          points={[
+            [from.x, from.y, (from.z ?? 0) + height],
+            [to.x, to.y, (to.z ?? 0) + height],
+          ]}
+          color={selected ? '#fbbf24' : '#e2e8f0'}
+          lineWidth={4}
+        />
+      ))}
     </group>
   )
 }

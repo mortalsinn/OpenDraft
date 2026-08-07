@@ -16,7 +16,8 @@
  * without making every other node pay for it.
  */
 
-import { railingQuantities, RAILING_DEFAULTS } from './railing.js'
+import { railingQuantities, railingSegments, RAILING_DEFAULTS } from './railing.js'
+import { buildChain } from './chain.js'
 
 /** Monotonic id source. */
 let nextId = 1
@@ -67,9 +68,10 @@ export const NODE_TYPES = {
    */
   railingRun: {
     label: 'Railing run',
-    create: ({ start, end, ...overrides }) => ({
-      start,
-      end,
+    create: ({ start, end, points, closed = false, ...overrides }) => ({
+      // A run is a polyline. A promoted single edge is just the two-point case.
+      points: points ?? (start && end ? [start, end] : []),
+      closed,
       ...RAILING_DEFAULTS,
       ...overrides,
     }),
@@ -95,7 +97,7 @@ export function distance(a, b) {
 /** An empty document. */
 export function createDocument() {
   return {
-    schemaVersion: 1,
+    schemaVersion: SCHEMA_VERSION,
     units: 'imperial',
     nodes: {},
     order: [],
@@ -146,6 +148,36 @@ export function convertNode(doc, id, type) {
   return { ...doc, nodes: { ...doc.nodes, [id]: converted } }
 }
 
+/**
+ * Promote an edge — and the whole chain of edges connected to it — into a
+ * single railing run.
+ *
+ * Drawing a deck perimeter produces four chained edges. Promoting them one at a
+ * time would give four runs with doubled-up corner posts, so promoting any one
+ * of them absorbs the rest. The consumed edges are removed; the clicked edge's
+ * id is reused for the run so selection survives the operation.
+ */
+export function promoteChain(doc, edgeId, type = 'railingRun') {
+  const edge = doc.nodes[edgeId]
+  const definition = NODE_TYPES[type]
+  if (!edge || edge.type !== 'edge' || !definition) return doc
+
+  const edges = listNodes(doc).filter((node) => node.type === 'edge')
+  const { points, edgeIds, closed } = buildChain(edges, edgeId)
+  if (points.length < 2) return doc
+
+  const nodes = { ...doc.nodes }
+  for (const id of edgeIds) delete nodes[id]
+
+  nodes[edgeId] = { ...definition.create({ points, closed }), id: edgeId, type }
+
+  // Keep the run where the first of its edges sat, and drop the others.
+  const consumed = new Set(edgeIds.filter((id) => id !== edgeId))
+  const order = doc.order.filter((id) => !consumed.has(id))
+
+  return { ...doc, nodes, order }
+}
+
 /** Remove a node by id. */
 export function removeNode(doc, id) {
   if (!doc.nodes[id]) return doc
@@ -159,9 +191,53 @@ export function listNodes(doc) {
   return doc.order.map((id) => doc.nodes[id]).filter(Boolean)
 }
 
-/** Just the nodes that have a start/end, which is what inference snaps to. */
+/**
+ * Every straight span in the document, as things the inference engine can snap
+ * to. A polyline run contributes one entry per span, each carrying the run's id
+ * so that snapping to a corner still selects the run it belongs to.
+ */
 export function listSegments(doc) {
-  return listNodes(doc).filter((node) => node.start && node.end)
+  const segments = []
+
+  for (const node of listNodes(doc)) {
+    if (node.type === 'railingRun') {
+      for (const [start, end] of railingSegments(node)) {
+        segments.push({ id: node.id, start, end })
+      }
+    } else if (node.start && node.end) {
+      segments.push(node)
+    }
+  }
+
+  return segments
+}
+
+/** The current document schema. Bump when a load-time migration is needed. */
+export const SCHEMA_VERSION = 2
+
+/**
+ * Bring an older document up to the current schema.
+ *
+ * v1 → v2: railing runs were a single `start`/`end` pair before runs could turn
+ * corners. Rewrite them as two-point polylines.
+ */
+export function migrateDocument(doc) {
+  if (!doc || doc.schemaVersion === SCHEMA_VERSION) return doc
+
+  if (doc.schemaVersion === 1) {
+    const nodes = {}
+    for (const [id, node] of Object.entries(doc.nodes ?? {})) {
+      if (node.type === 'railingRun' && !node.points && node.start && node.end) {
+        const { start, end, ...rest } = node
+        nodes[id] = { ...rest, points: [start, end], closed: false }
+      } else {
+        nodes[id] = node
+      }
+    }
+    return { ...doc, schemaVersion: SCHEMA_VERSION, nodes }
+  }
+
+  return null // unknown schema — caller should start fresh rather than guess
 }
 
 /**

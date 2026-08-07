@@ -58,10 +58,21 @@ export default function Inspector() {
         </button>
       )}
 
+      {node.type === 'edge' && (
+        <p className="mb-2 text-[11px] leading-snug text-slate-500">
+          Connected lines are absorbed into one run, so corners share a post.
+        </p>
+      )}
+
       {layout && (
         <div className="mb-3 rounded bg-white/5 px-2 py-1.5 text-xs">
           <Readout label="Run" value={formatLength(layout.runLength)} />
+          <Readout
+            label="Shape"
+            value={node.closed ? `closed, ${node.points.length} corners` : `${layout.rails.length} span${layout.rails.length === 1 ? '' : 's'}`}
+          />
           <Readout label="Bays" value={layout.bays} />
+          <Readout label="Posts" value={layout.posts.length} />
           <Readout label="Actual gap" value={formatLength(layout.gap, { denominator: 32 })} />
         </div>
       )}

@@ -6,6 +6,9 @@ import {
   updateNode,
   removeNode,
   computeTakeoff,
+  promoteChain,
+  migrateDocument,
+  SCHEMA_VERSION,
   seedIds,
   makeId,
 } from './doc.js'
@@ -34,11 +37,12 @@ describe('convertNode', () => {
     expect(converted.order).toEqual(doc.order)
   })
 
-  it('carries the geometry across and fills in type defaults', () => {
+  it('carries the geometry across as a polyline and fills in type defaults', () => {
     const { doc, id } = docWithEdge()
     const node = convertNode(doc, id, 'railingRun').nodes[id]
-    expect(node.start).toEqual(p(0, 0))
-    expect(node.end).toEqual(p(240, 0))
+    // A promoted single edge is the two-point case of a run.
+    expect(node.points).toEqual([p(0, 0), p(240, 0)])
+    expect(node.closed).toBe(false)
     expect(node.height).toBeGreaterThan(0)
     expect(node.maxGap).toBeGreaterThan(0)
   })
@@ -47,6 +51,79 @@ describe('convertNode', () => {
     const { doc, id } = docWithEdge()
     expect(convertNode(doc, id, 'nonsense')).toBe(doc)
     expect(convertNode(doc, 'missing', 'railingRun')).toBe(doc)
+  })
+})
+
+describe('promoteChain', () => {
+  /** A rectangle drawn as four chained edges. */
+  function rectangleDoc() {
+    const corners = [p(0, 0), p(240, 0), p(240, 120), p(0, 120)]
+    let doc = createDocument()
+    for (let i = 0; i < 4; i++) {
+      doc = addNode(doc, 'edge', { start: corners[i], end: corners[(i + 1) % 4] })
+    }
+    return doc
+  }
+
+  it('absorbs the whole chain into one run', () => {
+    const doc = rectangleDoc()
+    const first = doc.order[0]
+    const promoted = promoteChain(doc, first)
+
+    expect(promoted.order).toEqual([first])
+    expect(promoted.nodes[first].type).toBe('railingRun')
+    expect(promoted.nodes[first].closed).toBe(true)
+    expect(promoted.nodes[first].points).toHaveLength(4)
+  })
+
+  it('consumes the edges it swallowed', () => {
+    const doc = rectangleDoc()
+    const promoted = promoteChain(doc, doc.order[0])
+    expect(Object.keys(promoted.nodes)).toHaveLength(1)
+  })
+
+  it('quotes four fewer posts than promoting each side separately', () => {
+    const doc = rectangleDoc()
+
+    const asLoop = computeTakeoff(promoteChain(doc, doc.order[0])).find((l) => l.sku === 'POST')
+
+    let separately = doc
+    for (const id of doc.order) separately = convertNode(separately, id, 'railingRun')
+    const asFour = computeTakeoff(separately).find((l) => l.sku === 'POST')
+
+    expect(asFour.quantity - asLoop.quantity).toBe(4) // one per doubled corner
+  })
+
+  it('leaves non-edges alone', () => {
+    const { doc, id } = docWithEdge()
+    const railing = convertNode(doc, id, 'railingRun')
+    expect(promoteChain(railing, id)).toBe(railing)
+  })
+})
+
+describe('migrateDocument', () => {
+  it('rewrites v1 single-segment railings as polylines', () => {
+    const v1 = {
+      schemaVersion: 1,
+      nodes: { n1: { id: 'n1', type: 'railingRun', start: p(0, 0), end: p(240, 0), height: 42 } },
+      order: ['n1'],
+    }
+
+    const migrated = migrateDocument(v1)
+    expect(migrated.schemaVersion).toBe(SCHEMA_VERSION)
+    expect(migrated.nodes.n1.points).toEqual([p(0, 0), p(240, 0)])
+    expect(migrated.nodes.n1.start).toBeUndefined()
+    expect(migrated.nodes.n1.height).toBe(42) // parameters survive
+  })
+
+  it('passes a current document through untouched', () => {
+    const doc = createDocument()
+    expect(migrateDocument(doc)).toBe(doc)
+  })
+
+  it('refuses a document from an unknown future version', () => {
+    // Better to start clean than to guess at a shape we do not understand.
+    expect(migrateDocument({ schemaVersion: 99, nodes: {}, order: [] })).toBeNull()
   })
 })
 

@@ -7,7 +7,7 @@
  * ceremony without benefit.
  */
 
-import { createDocument, seedIds } from './doc.js'
+import { createDocument, seedIds, migrateDocument } from './doc.js'
 
 const STORAGE_KEY = 'opendraft.document.v1'
 
@@ -43,12 +43,17 @@ export function loadDocument() {
   try {
     const parsed = JSON.parse(raw)
     if (!parsed?.nodes || !Array.isArray(parsed.order)) return createDocument()
-    if (parsed.schemaVersion !== 1) return createDocument()
+
+    // Older drawings are upgraded rather than discarded; a document from an
+    // unrecognised future version returns null and we start clean instead of
+    // guessing at a shape we do not understand.
+    const migrated = migrateDocument(parsed)
+    if (!migrated) return createDocument()
 
     // Critical: move the id counter past everything loaded, or the next node
     // drawn silently overwrites an existing one.
-    seedIds(parsed)
-    return parsed
+    seedIds(migrated)
+    return migrated
   } catch {
     return createDocument()
   }
