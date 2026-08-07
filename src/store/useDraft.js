@@ -15,6 +15,7 @@ import {
   makeComponent,
   placeInstance,
   addChainedEdges,
+  applyEdgeEdit,
   duplicateNode,
   transformNode,
   arrayNode,
@@ -42,6 +43,9 @@ import {
   assignLayer,
 } from '../core/layers.js'
 
+/** Tools that work on two picked edges. */
+const EDGE_EDIT_TOOLS = new Set(['trim', 'extend', 'fillet', 'chamfer'])
+
 /**
  * Interaction state.
  *
@@ -66,6 +70,11 @@ export const useDraft = create((set, get) => ({
   shapeBase: null,
   /** Second point of a three-point arc. */
   arcSecond: null,
+  /** First edge picked for a two-edge edit, and where it was clicked. */
+  editFirst: null,
+  /** Radius for fillet, setback for chamfer. */
+  editRadius: 6,
+  setEditRadius: (editRadius) => set({ editRadius: Math.max(0, editRadius) }),
   polygonSides: 6,
   setPolygonSides: (polygonSides) => set({ polygonSides: Math.max(3, Math.round(polygonSides)) }),
   /** Latest inference result, written every pointer move by the viewport. */
@@ -210,6 +219,7 @@ export const useDraft = create((set, get) => ({
       pendingAnchor: null,
       shapeBase: null,
       arcSecond: null,
+      editFirst: null,
       typed: '',
       lockedAxis: null,
     }),
@@ -502,6 +512,30 @@ export const useDraft = create((set, get) => ({
       return
     }
 
+    // Two-edge edits: click the edge to change, then the one to work against.
+    if (EDGE_EDIT_TOOLS.has(tool)) {
+      const { editFirst, editRadius } = get()
+      const clickedId = snapRefs[0]
+      if (!clickedId || doc.nodes[clickedId]?.type !== 'edge') return
+
+      if (!editFirst) {
+        // Remember WHERE it was clicked — trim keeps the piece you pointed at.
+        set({ editFirst: { id: clickedId, at: point } })
+        return
+      }
+      if (clickedId === editFirst.id) return // an edge cannot edit against itself
+
+      commit(
+        applyEdgeEdit(doc, tool, editFirst.id, clickedId, {
+          keepNear: editFirst.at,
+          radius: editRadius,
+          setbackA: editRadius,
+        }),
+      )
+      set({ editFirst: null })
+      return
+    }
+
     if (tool === 'component') {
       const { pendingDefinition } = get()
       if (pendingDefinition) commit(placeInstance(doc, pendingDefinition, point))
@@ -615,6 +649,7 @@ export const useDraft = create((set, get) => ({
       pendingAnchor: null,
       shapeBase: null,
       arcSecond: null,
+      editFirst: null,
       typed: '',
       lockedAxis: null,
     }),

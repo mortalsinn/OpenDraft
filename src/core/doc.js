@@ -24,6 +24,7 @@ import { getRules, DEFAULT_JURISDICTION } from './code.js'
 import { defaultLayers, DEFAULT_LAYER_ID, countsInTakeoff, isSelectable } from './layers.js'
 import { instantiate, extractDefinition } from './components.js'
 import { nodeVertices, withVertices } from './vertices.js'
+import { extendToMeet, trimAt, filletCorner, chamferCorner, retargetNearestEnd } from './edit.js'
 import {
   circlePoints,
   arcPoints,
@@ -31,6 +32,7 @@ import {
   arcLength,
   quadrantPoints,
   pointOnCircle,
+  angleOf,
 } from './curves.js'
 
 /** Monotonic id source. */
@@ -458,6 +460,72 @@ export function arrayNode(doc, id, transforms) {
   }
 
   return next
+}
+
+/**
+ * Apply a two-edge edit — trim, extend, fillet or chamfer.
+ *
+ * Both edges must be plain segments. Higher-level objects (a railing run, a
+ * stair) are parametric and defined by more than their endpoints, so cutting
+ * one at an arbitrary point is a different operation with different meaning,
+ * and silently mangling it would be worse than refusing.
+ */
+export function applyEdgeEdit(doc, kind, firstId, secondId, options = {}) {
+  const first = doc.nodes[firstId]
+  const second = doc.nodes[secondId]
+  if (first?.type !== 'edge' || second?.type !== 'edge') return doc
+
+  if (kind === 'extend') {
+    const extended = extendToMeet(first.start, first.end, second.start, second.end)
+    return extended ? updateNode(doc, firstId, extended) : doc
+  }
+
+  if (kind === 'trim') {
+    const trimmed = trimAt(first.start, first.end, second.start, second.end, options.keepNear ?? first.start)
+    return trimmed ? updateNode(doc, firstId, trimmed) : doc
+  }
+
+  if (kind === 'fillet') {
+    const fillet = filletCorner(first.start, first.end, second.start, second.end, options.radius ?? 0)
+    if (!fillet) return doc
+
+    // Pull both legs back to their tangent points, then bridge them with a
+    // real arc — not a polyline approximation, so the radius stays exact and
+    // dimensionable.
+    let next = updateNode(doc, firstId, retargetNearestEnd(first.start, first.end, fillet.corner, fillet.tangentA))
+    next = updateNode(next, secondId, retargetNearestEnd(second.start, second.end, fillet.corner, fillet.tangentB))
+
+    return addNode(next, 'arc', {
+      centre: fillet.centre,
+      radius: fillet.radius,
+      startAngle: angleOf(fillet.centre, fillet.tangentA),
+      endAngle: angleOf(fillet.centre, fillet.tangentB),
+      layer: first.layer,
+    })
+  }
+
+  if (kind === 'chamfer') {
+    const chamfer = chamferCorner(
+      first.start,
+      first.end,
+      second.start,
+      second.end,
+      options.setbackA ?? 0,
+      options.setbackB ?? options.setbackA ?? 0,
+    )
+    if (!chamfer) return doc
+
+    let next = updateNode(doc, firstId, retargetNearestEnd(first.start, first.end, chamfer.corner, chamfer.tangentA))
+    next = updateNode(next, secondId, retargetNearestEnd(second.start, second.end, chamfer.corner, chamfer.tangentB))
+
+    return addNode(next, 'edge', {
+      start: chamfer.tangentA,
+      end: chamfer.tangentB,
+      layer: first.layer,
+    })
+  }
+
+  return doc
 }
 
 /** Ids of the dimensions that measure `id`. */

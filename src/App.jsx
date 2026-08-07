@@ -25,6 +25,8 @@ export default function App() {
   const setProjectName = useDraft((s) => s.setProjectName)
   const polygonSides = useDraft((s) => s.polygonSides)
   const setPolygonSides = useDraft((s) => s.setPolygonSides)
+  const editRadius = useDraft((s) => s.editRadius)
+  const setEditRadius = useDraft((s) => s.setEditRadius)
 
   return (
     <div className="flex h-screen w-screen flex-col bg-slate-950 text-slate-100">
@@ -51,6 +53,10 @@ export default function App() {
             ['polygon', 'Polygon'],
             ['circle', 'Circle'],
             ['arc', 'Arc'],
+            ['trim', 'Trim'],
+            ['extend', 'Extend'],
+            ['fillet', 'Fillet'],
+            ['chamfer', 'Chamfer'],
             ['dimension', 'Dimension'],
             ['note', 'Note'],
           ].map(([mode, label]) => (
@@ -79,6 +85,20 @@ export default function App() {
             </button>
           ))}
         </div>
+
+        {(tool === 'fillet' || tool === 'chamfer') && (
+          <label className="flex items-center gap-1.5 text-xs text-slate-400">
+            {tool === 'fillet' ? 'Radius' : 'Setback'}
+            <input
+              type="number"
+              min={0}
+              value={editRadius}
+              onChange={(event) => setEditRadius(Number(event.target.value))}
+              onKeyDown={(event) => event.stopPropagation()}
+              className="w-16 rounded bg-slate-900 px-1.5 py-1 text-slate-200 outline-none ring-1 ring-white/10 focus:ring-amber-500"
+            />
+          </label>
+        )}
 
         {tool === 'polygon' && (
           <label className="flex items-center gap-1.5 text-xs text-slate-400">
@@ -134,6 +154,10 @@ export default function App() {
             {tool === 'polygon' && 'Click the centre, then a corner · sides set on the right'}
             {tool === 'circle' && 'Click the centre, then a point on the rim'}
             {tool === 'arc' && 'Click both ends, then a point the arc passes through'}
+            {tool === 'trim' && 'Click the part of a line to KEEP, then the line to cut it at'}
+            {tool === 'extend' && 'Click the line to stretch, then the line to meet'}
+            {(tool === 'fillet' || tool === 'chamfer') &&
+              'Click two lines that meet · radius set on the right'}
           </span>
         </div>
       </header>
