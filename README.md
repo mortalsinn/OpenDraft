@@ -3,6 +3,9 @@
 A drafting tool that fuses **SketchUp**'s direct 3D manipulation with **ArcSite**'s
 field-first 2D takeoff.
 
+> Working on it? Read **[NOTES.md](NOTES.md)** — invariants, module map, and the
+> environment gotchas that will otherwise cost you an afternoon.
+
 One document, two cameras. You sketch a plan with live dimensions; that plan is a
 projection of a real 3D model you can orbit; and every element knows what it costs.
 
