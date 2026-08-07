@@ -38,6 +38,8 @@ import { parseLength, snapToFraction } from '../core/units.js'
 import { saveDocument, loadDocument, clearDocument } from '../core/persist.js'
 import { makeAnchor } from '../core/dimension.js'
 import { applySelection, boxFromDrag, nodesInBox } from '../core/selection.js'
+import { createSheet, createViewport, makeSheetId, frameBounds } from '../core/sheets.js'
+import { documentBounds } from '../core/plan.js'
 import { isSelectable } from '../core/layers.js'
 import {
   DEFAULT_LAYER_ID,
@@ -154,6 +156,61 @@ export const useDraft = create((set, get) => ({
   setJurisdiction: (jurisdiction) => {
     const { doc, commit } = get()
     commit({ ...doc, jurisdiction })
+  },
+
+  /** The sheet being edited in the sheets panel. */
+  activeSheet: 'sheet1',
+  setActiveSheet: (activeSheet) => set({ activeSheet }),
+
+  newSheet: () => {
+    const { doc, commit } = get()
+    const index = (doc.sheetOrder?.length ?? 0) + 1
+    const id = makeSheetId()
+    const sheet = createSheet(id, {
+      name: `Sheet ${index}`,
+      sheetNumber: `A-${index}`,
+      viewports: [createViewport()],
+    })
+
+    commit({
+      ...doc,
+      sheets: { ...doc.sheets, [id]: sheet },
+      sheetOrder: [...(doc.sheetOrder ?? []), id],
+    })
+    set({ activeSheet: id })
+  },
+
+  deleteSheet: (id) => {
+    const { doc, commit, activeSheet } = get()
+    // A document with no sheet cannot be exported as a set, so the last one
+    // stays.
+    if ((doc.sheetOrder?.length ?? 0) <= 1) return
+
+    const sheets = { ...doc.sheets }
+    delete sheets[id]
+    const sheetOrder = doc.sheetOrder.filter((sheetId) => sheetId !== id)
+
+    commit({ ...doc, sheets, sheetOrder })
+    if (activeSheet === id) set({ activeSheet: sheetOrder[0] })
+  },
+
+  updateSheet: (id, changes) => {
+    const { doc, commit } = get()
+    if (!doc.sheets?.[id]) return
+    commit({ ...doc, sheets: { ...doc.sheets, [id]: { ...doc.sheets[id], ...changes } } })
+  },
+
+  /** Frame a sheet's first viewport onto the drawing at the largest scale that fits. */
+  fitViewport: (id) => {
+    const { doc, commit } = get()
+    const sheet = doc.sheets?.[id]
+    if (!sheet?.viewports?.length) return
+
+    const bounds = documentBounds(doc)
+    if (!bounds) return
+
+    const viewports = [frameBounds(sheet.viewports[0], bounds), ...sheet.viewports.slice(1)]
+    commit({ ...doc, sheets: { ...doc.sheets, [id]: { ...sheet, viewports } } })
   },
 
   /** Which layer new geometry lands on. */

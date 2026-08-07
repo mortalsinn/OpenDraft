@@ -22,6 +22,7 @@ import { polygonArea, polygonAreaSquareFeet, polygonPerimeter } from './polygon.
 import { stairQuantities, stairIssues, STAIR_DEFAULTS } from './stairs.js'
 import { getRules, DEFAULT_JURISDICTION } from './code.js'
 import { defaultLayers, DEFAULT_LAYER_ID, countsInTakeoff, isSelectable } from './layers.js'
+import { createSheet, createViewport } from './sheets.js'
 import { instantiate, extractDefinition } from './components.js'
 import { nodeVertices, withVertices } from './vertices.js'
 import { extendToMeet, trimAt, filletCorner, chamferCorner, retargetNearestEnd } from './edit.js'
@@ -286,6 +287,12 @@ export function distance(a, b) {
   return Math.hypot(dx, dy, dz)
 }
 
+/** The single sheet a new document starts with. */
+export function defaultSheets() {
+  const sheet = createSheet('sheet1', { name: 'Sheet 1', viewports: [createViewport()] })
+  return { sheets: { [sheet.id]: sheet }, sheetOrder: [sheet.id] }
+}
+
 /** An empty document. */
 export function createDocument() {
   return {
@@ -294,6 +301,7 @@ export function createDocument() {
     jurisdiction: DEFAULT_JURISDICTION,
     ...defaultLayers(),
     definitions: {},
+    ...defaultSheets(),
     nodes: {},
     order: [],
   }
@@ -734,7 +742,7 @@ export function listSnapPoints(doc) {
 }
 
 /** The current document schema. Bump when a load-time migration is needed. */
-export const SCHEMA_VERSION = 4
+export const SCHEMA_VERSION = 5
 
 /**
  * Bring an older document up to the current schema.
@@ -777,6 +785,16 @@ export function migrateDocument(doc) {
   // simply had none.
   if (migrated.schemaVersion === 3) {
     migrated = { ...migrated, schemaVersion: 4, definitions: migrated.definitions ?? {} }
+  }
+
+  // v4 -> v5: sheets. An older drawing gains one sheet framing what it has,
+  // rather than none — a document with no sheet cannot be exported as a set.
+  if (migrated.schemaVersion === 4) {
+    migrated = {
+      ...migrated,
+      schemaVersion: 5,
+      ...(migrated.sheets ? {} : defaultSheets()),
+    }
   }
 
   return migrated.schemaVersion === SCHEMA_VERSION ? migrated : null

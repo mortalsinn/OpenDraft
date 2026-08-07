@@ -74,6 +74,21 @@ describe('buildPdf', () => {
     expect(pdf).toContain('(a \\(b\\) \\\\ c)')
   })
 
+  it('folds typographic punctuation into WinAnsi rather than dropping it', () => {
+    // An em dash at its Unicode code point silently vanishes from the sheet,
+    // which is how "Deck — structure only" prints with a gap and nobody
+    // notices until it is on paper.
+    const pdf = buildPdf([new PdfPage().text(0, 0, 'Deck — structure 45°')])
+    expect(pdf).toContain(String.fromCharCode(0x97))
+    expect(pdf).toContain(String.fromCharCode(0xb0))
+  })
+
+  it('substitutes a visible placeholder for anything unrepresentable', () => {
+    // A visible '?' is a bug someone reports; a silent gap is one that ships.
+    const pdf = buildPdf([new PdfPage().text(0, 0, 'a 中 b')])
+    expect(pdf).toContain('(a ? b)')
+  })
+
   it('handles multiple pages', () => {
     const pdf = buildPdf([new PdfPage().line(0, 0, 1, 1), new PdfPage().line(0, 0, 2, 2)])
     expect(pdf).toContain('/Count 2')

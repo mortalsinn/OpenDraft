@@ -9,6 +9,7 @@ import ComponentsPanel from './ui/ComponentsPanel.jsx'
 import TransformPanel from './ui/TransformPanel.jsx'
 import BlocksPanel from './ui/BlocksPanel.jsx'
 import PrecisionBar from './ui/PrecisionBar.jsx'
+import SheetsPanel from './ui/SheetsPanel.jsx'
 import { useDraft } from './store/useDraft.js'
 
 const SEGMENTED = 'px-3 py-1 text-xs font-medium transition'
@@ -194,6 +195,7 @@ export default function App() {
           <LayersPanel />
           <CompliancePanel />
           <TakeoffPanel />
+          <SheetsPanel />
           <ExportMenu />
         </aside>
       </div>

@@ -20,9 +20,55 @@ export const PAGE_SIZES = {
   a3: { width: 842, height: 1191 },
 }
 
-/** Escape the characters that would otherwise end a PDF string. */
+/**
+ * Characters that exist in WinAnsiEncoding but at a different code point than
+ * their Unicode one.
+ *
+ * Without this an em dash silently vanishes from the sheet — which is how
+ * "Deck — structure only" prints as "Deck   structure only" and nobody notices
+ * until it is on paper.
+ */
+const WINANSI = new Map([
+  ['–', 0x96], // en dash
+  ['—', 0x97], // em dash
+  ['‘', 0x91], // left single quote
+  ['’', 0x92], // right single quote
+  ['“', 0x93], // left double quote
+  ['”', 0x94], // right double quote
+  ['•', 0x95], // bullet
+  ['…', 0x85], // ellipsis
+  ['×', 0xd7], // multiplication sign
+  ['°', 0xb0], // degree
+])
+
+/**
+ * Escape a string for a PDF literal, and fold it into WinAnsi.
+ *
+ * Anything with no WinAnsi equivalent becomes '?' rather than being dropped —
+ * a visible placeholder is a bug someone reports, whereas a silent gap is one
+ * that ships.
+ */
 function escapeText(text) {
-  return String(text).replace(/([\\()])/g, '\\$1')
+  let out = ''
+
+  for (const character of String(text)) {
+    const mapped = WINANSI.get(character)
+    if (mapped !== undefined) {
+      out += String.fromCharCode(mapped)
+      continue
+    }
+
+    const code = character.codePointAt(0)
+    if (code > 0xff) {
+      out += '?'
+      continue
+    }
+
+    if (character === '\\' || character === '(' || character === ')') out += `\\${character}`
+    else out += character
+  }
+
+  return out
 }
 
 const round = (n) => Math.round(n * 100) / 100
@@ -73,6 +119,27 @@ export class PdfPage {
 
   rect(x, y, width, height) {
     this.ops.push(`${round(x)} ${round(y)} ${round(width)} ${round(height)} re S`)
+    return this
+  }
+
+  /**
+   * Save the graphics state. Paired with `restore`, this is what lets a
+   * viewport clip its contents without the clip leaking onto the rest of the
+   * sheet — a clip path in PDF applies until the state is popped.
+   */
+  save() {
+    this.ops.push('q')
+    return this
+  }
+
+  restore() {
+    this.ops.push('Q')
+    return this
+  }
+
+  /** Clip everything that follows to a rectangle, until `restore`. */
+  clipRect(x, y, width, height) {
+    this.ops.push(`${round(x)} ${round(y)} ${round(width)} ${round(height)} re W n`)
     return this
   }
 

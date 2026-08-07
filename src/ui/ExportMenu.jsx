@@ -3,6 +3,7 @@ import { useDraft } from '../store/useDraft.js'
 import { exportPlanPdf } from '../core/plan.js'
 import { pdfToBlob } from '../core/pdf.js'
 import { buildHandoff, validateHandoff } from '../core/handoff.js'
+import { exportSheetSet } from '../core/sheetRender.js'
 
 /** Trigger a browser download for a blob. */
 function download(blob, filename) {
@@ -34,6 +35,17 @@ export default function ExportMenu() {
     setStatus(`Plan exported at ${scale.label}`)
   }
 
+  const exportSet = () => {
+    const set = exportSheetSet(doc, { projectName, date: today() })
+    if (!set) {
+      setStatus('No sheets to export')
+      return
+    }
+
+    download(pdfToBlob(set.pdf), `${safeName(projectName)}-set.pdf`)
+    setStatus(`${set.sheetCount} sheet(s) exported`)
+  }
+
   const exportHandoff = () => {
     const handoff = buildHandoff(doc, { projectName, exportedAt: new Date().toISOString() })
     const problems = validateHandoff(handoff)
@@ -61,6 +73,12 @@ export default function ExportMenu() {
           className="flex-1 rounded bg-slate-700 px-2 py-1.5 text-xs font-medium text-slate-100 transition hover:bg-slate-600"
         >
           Plan PDF
+        </button>
+        <button
+          onClick={exportSet}
+          className="flex-1 rounded bg-slate-700 px-2 py-1.5 text-xs font-medium text-slate-100 transition hover:bg-slate-600"
+        >
+          Sheet set
         </button>
         <button
           onClick={exportHandoff}
