@@ -27,6 +27,7 @@ import { instantiate, extractDefinition } from './components.js'
 import { nodeVertices, withVertices } from './vertices.js'
 import { extendToMeet, trimAt, filletCorner, chamferCorner, retargetNearestEnd } from './edit.js'
 import { blockSegments, blockQuantities, defaultAttributes } from './blocks.js'
+import { rakingGuardQuantities, rakingGuardIssues } from './rake.js'
 import {
   circlePoints,
   arcPoints,
@@ -175,8 +176,19 @@ export const NODE_TYPES = {
       ...STAIR_DEFAULTS,
       ...overrides,
     }),
-    quantities: stairQuantities,
-    issues: stairIssues,
+    /**
+     * A stair carries its own guard, rather than the guard being a separate
+     * object that has to be kept in step. A rake that disagrees with the
+     * flight it sits on is worse than no rake at all.
+     */
+    quantities: (node) => [
+      ...stairQuantities(node),
+      ...(node.guard ? rakingGuardQuantities(node, node.guardParams ?? {}) : []),
+    ],
+    issues: (node, rules) => [
+      ...stairIssues(node, rules),
+      ...(node.guard ? rakingGuardIssues(node, node.guardParams ?? {}, rules) : []),
+    ],
     editable: [
       { key: 'totalRise', label: 'Floor to floor', min: 1, max: 480 },
       { key: 'treadDepth', label: 'Tread depth', min: 6, max: 24 },

@@ -2,6 +2,7 @@ import { useDraft } from '../store/useDraft.js'
 import { NODE_TYPES } from '../core/doc.js'
 import { layoutRailing } from '../core/railing.js'
 import { layoutStair } from '../core/stairs.js'
+import { layoutRakingGuard } from '../core/rake.js'
 import { buildChain } from '../core/chain.js'
 import { polygonAreaSquareFeet, polygonPerimeter } from '../core/polygon.js'
 import { resolveDimension, isAssociative } from '../core/dimension.js'
@@ -169,6 +170,31 @@ export default function Inspector() {
       )}
 
       {stair && (
+        <button
+          onClick={() => edit('guard', !node.guard)}
+          className={`mb-2 w-full rounded px-2 py-1.5 text-xs font-semibold transition ${
+            node.guard
+              ? 'bg-amber-500 text-slate-950 hover:bg-amber-400'
+              : 'bg-slate-700 text-slate-100 hover:bg-slate-600'
+          }`}
+        >
+          {node.guard ? 'Raking guard on' : 'Add raking guard'}
+        </button>
+      )}
+
+      {stair && node.guard && (
+        <div className="mb-2 rounded bg-white/5 px-2 py-1.5 text-xs">
+          <Readout label="Rake length" value={formatLength(rake(node).railLength)} />
+          <Readout label="Rake posts" value={rake(node).posts.length} />
+          <Readout label="Rake pickets" value={rake(node).pickets.length} />
+          <Readout
+            label="Slope"
+            value={`${((rake(node).slope * 180) / Math.PI).toFixed(1)}°`}
+          />
+        </div>
+      )}
+
+      {stair && (
         <div className="mb-3 rounded bg-white/5 px-2 py-1.5 text-xs">
           <Readout label="Risers" value={stair.riserCount} />
           <Readout label="Riser height" value={formatLength(stair.riserHeight, { denominator: 32 })} />
@@ -208,6 +234,9 @@ export default function Inspector() {
     </div>
   )
 }
+
+/** Guard layout for a stair, with its own parameters folded in. */
+const rake = (node) => layoutRakingGuard(node, node.guardParams ?? {})
 
 function Field({ field, value, onCommit }) {
   return (

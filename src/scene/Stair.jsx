@@ -2,6 +2,7 @@ import { useMemo } from 'react'
 import { Instances, Instance, Line } from '@react-three/drei'
 import { layoutStair } from '../core/stairs.js'
 import { railingPoints } from '../core/railing.js'
+import { rakingGuardGeometry } from '../core/rake.js'
 
 /**
  * A flight of stairs in 3D.
@@ -11,6 +12,10 @@ import { railingPoints } from '../core/railing.js'
  */
 export default function Stair({ node, selected }) {
   const layout = useMemo(() => layoutStair(node), [node])
+  const guard = useMemo(
+    () => (node.guard ? rakingGuardGeometry(node, node.guardParams ?? {}) : null),
+    [node],
+  )
   const points = railingPoints(node)
 
   const placement = useMemo(() => {
@@ -75,6 +80,39 @@ export default function Stair({ node, selected }) {
           />
         ))}
       </Instances>
+
+      {/* The raking guard, if this flight carries one. Posts and pickets are
+          PLUMB; only the rail follows the slope. */}
+      {guard && (
+        <group>
+          {guard.posts.map(([base, top], i) => (
+            <Line
+              key={`post-${i}`}
+              points={[[base.x, base.y, base.z], [top.x, top.y, top.z]]}
+              color={selected ? '#f59e0b' : '#cbd5e1'}
+              lineWidth={selected ? 4 : 3}
+            />
+          ))}
+          {guard.pickets.map(([base, top], i) => (
+            <Line
+              key={`picket-${i}`}
+              points={[[base.x, base.y, base.z], [top.x, top.y, top.z]]}
+              color={selected ? '#fbbf24' : '#94a3b8'}
+              lineWidth={1}
+            />
+          ))}
+          {guard.rail && (
+            <Line
+              points={[
+                [guard.rail[0].x, guard.rail[0].y, guard.rail[0].z],
+                [guard.rail[1].x, guard.rail[1].y, guard.rail[1].z],
+              ]}
+              color={selected ? '#fbbf24' : '#e2e8f0'}
+              lineWidth={4}
+            />
+          )}
+        </group>
+      )}
 
       {/* The stringer line, so the flight reads at a glance in any view. */}
       <Line
