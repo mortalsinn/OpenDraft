@@ -23,6 +23,7 @@ import {
 } from '../core/doc.js'
 import { SHAPE_TOOLS, parsePair } from '../core/shapes.js'
 import { arcThroughPoints } from '../core/curves.js'
+import { defaultAttributes } from '../core/blocks.js'
 import {
   rotatePoint,
   scalePoint,
@@ -136,6 +137,22 @@ export const useDraft = create((set, get) => ({
    */
   pendingDefinition: null,
   setPendingDefinition: (pendingDefinition) => set({ pendingDefinition, tool: 'component' }),
+
+  /** The block armed for insertion, and the attributes it will carry. */
+  pendingBlock: null,
+  blockAttributes: null,
+  armBlock: (blockId) =>
+    set({ pendingBlock: blockId, blockAttributes: defaultAttributes(blockId), tool: 'block' }),
+  setBlockAttribute: (tag, value) =>
+    set((state) => ({ blockAttributes: { ...state.blockAttributes, [tag]: value } })),
+
+  /** Change an attribute on an already-placed block. */
+  setPlacedAttribute: (tag, value) => {
+    const { doc, commit, selection } = get()
+    const node = selection && doc.nodes[selection]
+    if (node?.type !== 'blockInstance') return
+    commit(updateNode(doc, selection, { attributes: { ...node.attributes, [tag]: value } }))
+  },
 
   /**
    * Transform the selection.
@@ -533,6 +550,22 @@ export const useDraft = create((set, get) => ({
         }),
       )
       set({ editFirst: null })
+      return
+    }
+
+    // Blocks: the armed symbol drops at the click.
+    if (tool === 'block') {
+      const { pendingBlock, blockAttributes } = get()
+      if (!pendingBlock) return
+
+      commit(
+        addNode(doc, 'blockInstance', {
+          blockId: pendingBlock,
+          position: point,
+          attributes: blockAttributes ?? defaultAttributes(pendingBlock),
+          layer: get().activeLayer,
+        }),
+      )
       return
     }
 

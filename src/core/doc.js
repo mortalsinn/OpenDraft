@@ -25,6 +25,7 @@ import { defaultLayers, DEFAULT_LAYER_ID, countsInTakeoff, isSelectable } from '
 import { instantiate, extractDefinition } from './components.js'
 import { nodeVertices, withVertices } from './vertices.js'
 import { extendToMeet, trimAt, filletCorner, chamferCorner, retargetNearestEnd } from './edit.js'
+import { blockSegments, blockQuantities, defaultAttributes } from './blocks.js'
 import {
   circlePoints,
   arcPoints,
@@ -231,6 +232,27 @@ export const NODE_TYPES = {
         : [],
     editable: [{ key: 'radius', label: 'Radius', min: 0.25, max: 6000 }],
     pushPull: 'radius',
+  },
+
+  /**
+   * A placed catalogue symbol. Unlike a component instance — which references
+   * frozen geometry — a block generates its geometry from its ATTRIBUTES, so a
+   * 36" door and a 32" door are the same block at different widths.
+   */
+  blockInstance: {
+    label: 'Block',
+    create: ({ blockId, position, rotation = 0, scale = 1, attributes }) => ({
+      blockId,
+      position,
+      rotation,
+      scale,
+      attributes: attributes ?? defaultAttributes(blockId),
+    }),
+    quantities: blockQuantities,
+    editable: [
+      { key: 'rotation', label: 'Rotation', min: -Math.PI * 2, max: Math.PI * 2 },
+      { key: 'scale', label: 'Scale', min: 0.05, max: 20 },
+    ],
   },
 
   /** A text note, optionally with a leader pointing at something. */
@@ -585,6 +607,15 @@ export function listSegments(doc) {
       continue
     }
 
+    // A block's geometry is generated from its attributes, so it is produced
+    // here rather than read off the node.
+    if (node.type === 'blockInstance') {
+      for (const [start, end] of blockSegments(node)) {
+        segments.push({ id: node.id, start, end, curve: true })
+      }
+      continue
+    }
+
     // Curves contribute their tessellation, so the cursor can land ON a curve
     // the same way it lands on a line.
     const curve = curveOutline(node)
@@ -641,6 +672,13 @@ export function listSnapPoints(doc) {
 
   for (const node of listNodes(doc)) {
     if (!isSelectable(doc, node)) continue
+
+    if (node.type === 'blockInstance' && node.position) {
+      // The insertion point is the handle you grab a symbol by.
+      points.push({ kind: 'centre', point: node.position, refs: [node.id] })
+      continue
+    }
+
     if (node.type !== 'circle' && node.type !== 'arc') continue
     if (!(node.radius > 0)) continue
 

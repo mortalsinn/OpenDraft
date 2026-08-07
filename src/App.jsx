@@ -7,6 +7,7 @@ import CompliancePanel from './ui/CompliancePanel.jsx'
 import LayersPanel from './ui/LayersPanel.jsx'
 import ComponentsPanel from './ui/ComponentsPanel.jsx'
 import TransformPanel from './ui/TransformPanel.jsx'
+import BlocksPanel from './ui/BlocksPanel.jsx'
 import { useDraft } from './store/useDraft.js'
 
 const SEGMENTED = 'px-3 py-1 text-xs font-medium transition'
@@ -59,6 +60,7 @@ export default function App() {
             ['chamfer', 'Chamfer'],
             ['dimension', 'Dimension'],
             ['note', 'Note'],
+            ['block', 'Block'],
           ].map(([mode, label]) => (
             <button
               key={mode}
@@ -149,6 +151,7 @@ export default function App() {
             {tool === 'dimension' &&
               'Click two points · snapping to a corner binds the dimension so it follows the geometry'}
             {tool === 'note' && 'Click to drop a note, then edit its text on the right'}
+            {tool === 'block' && 'Pick a symbol on the right, set its attributes, then click to place'}
             {tool === 'rectangle' &&
               'Click two corners · or type a size like 120,96 or 10′,8′ and press Enter'}
             {tool === 'polygon' && 'Click the centre, then a corner · sides set on the right'}
@@ -177,6 +180,7 @@ export default function App() {
         <aside className="flex w-72 shrink-0 flex-col overflow-y-auto border-l border-white/10 bg-slate-900/60">
           <Inspector />
           <TransformPanel />
+          <BlocksPanel />
           <ComponentsPanel />
           <LayersPanel />
           <CompliancePanel />
