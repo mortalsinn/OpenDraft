@@ -402,6 +402,64 @@ export function translateNode(doc, id, delta) {
   return { ...doc, nodes: { ...doc.nodes, [id]: withVertices(node, moved) } }
 }
 
+/**
+ * Duplicate a node, optionally moving the copy.
+ *
+ * A component instance duplicates as another instance of the SAME definition,
+ * which is what keeps an array of twelve posts editable as one thing.
+ */
+export function duplicateNode(doc, id, offset = { x: 0, y: 0, z: 0 }) {
+  const node = doc.nodes[id]
+  if (!node) return { doc, id: null }
+
+  const newId = makeId(node.type === 'edge' ? 'e' : 'n')
+  const moved = withVertices(
+    node,
+    nodeVertices(node).map((vertex) => ({
+      x: vertex.x + offset.x,
+      y: vertex.y + offset.y,
+      z: (vertex.z ?? 0) + (offset.z ?? 0),
+    })),
+  )
+
+  // Curves keep their geometry in `centre`, which is not a vertex.
+  const placed = moved.centre
+    ? { ...moved, centre: { x: moved.centre.x + offset.x, y: moved.centre.y + offset.y, z: moved.centre.z ?? 0 } }
+    : moved
+
+  return {
+    doc: { ...doc, nodes: { ...doc.nodes, [newId]: { ...placed, id: newId } }, order: [...doc.order, newId] },
+    id: newId,
+  }
+}
+
+/** Apply a point transform to a node, including a curve's centre. */
+export function transformNode(doc, id, transform) {
+  const node = doc.nodes[id]
+  if (!node) return doc
+
+  let next = withVertices(node, nodeVertices(node).map(transform))
+  if (next.centre) next = { ...next, centre: transform(next.centre) }
+
+  return { ...doc, nodes: { ...doc.nodes, [id]: next } }
+}
+
+/**
+ * Array the node, leaving the original in place.
+ * `placements` are point transforms — see transform.js.
+ */
+export function arrayNode(doc, id, transforms) {
+  let next = doc
+
+  for (const transform of transforms) {
+    const { doc: withCopy, id: copyId } = duplicateNode(next, id)
+    if (!copyId) continue
+    next = transformNode(withCopy, copyId, transform)
+  }
+
+  return next
+}
+
 /** Ids of the dimensions that measure `id`. */
 export function dependentsOf(doc, id) {
   return listNodes(doc)

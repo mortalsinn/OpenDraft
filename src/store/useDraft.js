@@ -15,10 +15,22 @@ import {
   makeComponent,
   placeInstance,
   addChainedEdges,
+  duplicateNode,
+  transformNode,
+  arrayNode,
   NODE_TYPES,
 } from '../core/doc.js'
 import { SHAPE_TOOLS, parsePair } from '../core/shapes.js'
 import { arcThroughPoints } from '../core/curves.js'
+import {
+  rotatePoint,
+  scalePoint,
+  mirrorPoint,
+  offsetPolyline,
+  rectangularArray,
+  polarArray,
+} from '../core/transform.js'
+import { withVertices } from '../core/vertices.js'
 import { parseLength, snapToFraction } from '../core/units.js'
 import { saveDocument, loadDocument, clearDocument } from '../core/persist.js'
 import { makeAnchor } from '../core/dimension.js'
@@ -115,6 +127,74 @@ export const useDraft = create((set, get) => ({
    */
   pendingDefinition: null,
   setPendingDefinition: (pendingDefinition) => set({ pendingDefinition, tool: 'component' }),
+
+  /**
+   * Transform the selection.
+   *
+   * All of these work about the selection's own centre unless a base point is
+   * given, so a transform never silently flings an object across the drawing.
+   */
+  transformSelection: (kind, options = {}) => {
+    const { doc, commit, selection } = get()
+    const node = selection && doc.nodes[selection]
+    if (!node) return
+
+    const base = options.base ?? nodeCentroid(node)
+
+    if (kind === 'rotate') {
+      commit(transformNode(doc, selection, (p) => rotatePoint(p, base, options.angle ?? 0)))
+      return
+    }
+
+    if (kind === 'scale') {
+      const factor = options.factor ?? 1
+      if (!(factor > 0)) return
+      commit(transformNode(doc, selection, (p) => scalePoint(p, base, factor)))
+      return
+    }
+
+    if (kind === 'mirror') {
+      // Mirror about a line through the centre, at the given angle.
+      const angle = options.angle ?? 0
+      const far = { x: base.x + Math.cos(angle), y: base.y + Math.sin(angle), z: base.z ?? 0 }
+      commit(transformNode(doc, selection, (p) => mirrorPoint(p, base, far)))
+      return
+    }
+
+    if (kind === 'offset') {
+      const distance = options.distance ?? 0
+      const points = nodeVertices(node)
+      if (points.length < 2 || !distance) return
+
+      const moved = offsetPolyline(points, distance, !!node.closed)
+      const { doc: withCopy, id: copyId } = duplicateNode(doc, selection)
+      if (!copyId) return
+
+      commit({
+        ...withCopy,
+        nodes: { ...withCopy.nodes, [copyId]: withVertices(withCopy.nodes[copyId], moved) },
+      })
+      return
+    }
+
+    if (kind === 'arrayRectangular') {
+      const { columns = 2, rows = 1, spacingX = 24, spacingY = 24 } = options
+      // Drop the identity placement — the original is already there.
+      const placements = rectangularArray(columns, rows, spacingX, spacingY).slice(1)
+      commit(arrayNode(doc, selection, placements.map((offset) => (p) => ({
+        x: p.x + offset.x,
+        y: p.y + offset.y,
+        z: p.z ?? 0,
+      }))))
+      return
+    }
+
+    if (kind === 'arrayPolar') {
+      const { count = 6, totalAngle = Math.PI * 2, centre = base } = options
+      const angles = polarArray(count, totalAngle).slice(1)
+      commit(arrayNode(doc, selection, angles.map((angle) => (p) => rotatePoint(p, centre, angle))))
+    }
+  },
 
   /** Move the selected object onto a layer. */
   assignSelectionToLayer: (layerId) => {
@@ -563,6 +643,20 @@ function snapPoint(p) {
 // not take.
 if (import.meta.env?.DEV && typeof window !== 'undefined') {
   window.__draft = useDraft
+}
+
+/** Centre of a node's vertices — the natural pivot for a transform. */
+function nodeCentroid(node) {
+  const vertices = node.centre ? [node.centre] : nodeVertices(node)
+  if (!vertices.length) return { x: 0, y: 0, z: 0 }
+
+  let x = 0
+  let y = 0
+  for (const vertex of vertices) {
+    x += vertex.x
+    y += vertex.y
+  }
+  return { x: x / vertices.length, y: y / vertices.length, z: 0 }
 }
 
 function clamp(value, min, max) {
