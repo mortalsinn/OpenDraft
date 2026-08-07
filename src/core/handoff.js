@@ -14,6 +14,7 @@ import { computeTakeoff, documentIssues, listNodes, NODE_TYPES } from './doc.js'
 import { layoutRailing } from './railing.js'
 import { layoutStair } from './stairs.js'
 import { polygonAreaSquareFeet } from './polygon.js'
+import { getRules } from './code.js'
 
 /** Bump only when the shape below changes in a way AscendOS must handle. */
 export const HANDOFF_VERSION = 1
@@ -29,6 +30,7 @@ export const HANDOFF_VERSION = 1
  */
 export function buildHandoff(doc, meta = {}) {
   const { projectName = 'Untitled', drawingId = null, exportedAt = null } = meta
+  const rules = getRules(doc.jurisdiction)
 
   const lines = computeTakeoff(doc).map((line) => ({
     sku: line.sku,
@@ -47,6 +49,9 @@ export function buildHandoff(doc, meta = {}) {
     drawingId,
     exportedAt,
     units: 'inches',
+    // Which code the quantities were checked against. A takeoff with issues
+    // attached is meaningless without knowing whose rules produced them.
+    jurisdiction: { id: rules.id, label: rules.label, authority: rules.authority },
     lines,
     objects: listNodes(doc).map(summarise).filter(Boolean),
     issues: documentIssues(doc).map((issue) => ({
@@ -54,6 +59,7 @@ export function buildHandoff(doc, meta = {}) {
       severity: issue.severity,
       code: issue.code,
       message: issue.message,
+      citation: issue.citation ?? null,
     })),
   }
 }

@@ -16,10 +16,11 @@
  * without making every other node pay for it.
  */
 
-import { railingQuantities, railingSegments, RAILING_DEFAULTS } from './railing.js'
+import { railingQuantities, railingIssues, railingSegments, RAILING_DEFAULTS } from './railing.js'
 import { buildChain } from './chain.js'
 import { polygonArea, polygonAreaSquareFeet, polygonPerimeter } from './polygon.js'
 import { stairQuantities, stairIssues, STAIR_DEFAULTS } from './stairs.js'
+import { getRules, DEFAULT_JURISDICTION } from './code.js'
 
 /** Monotonic id source. */
 let nextId = 1
@@ -78,6 +79,7 @@ export const NODE_TYPES = {
       ...overrides,
     }),
     quantities: railingQuantities,
+    issues: railingIssues,
     /** Parameters the inspector may edit, with sensible input bounds. */
     editable: [
       { key: 'height', label: 'Height', min: 24, max: 60 },
@@ -188,6 +190,7 @@ export function createDocument() {
   return {
     schemaVersion: SCHEMA_VERSION,
     units: 'imperial',
+    jurisdiction: DEFAULT_JURISDICTION,
     nodes: {},
     order: [],
   }
@@ -405,12 +408,13 @@ export function migrateDocument(doc) {
  * to say so.
  */
 export function documentIssues(doc) {
+  const rules = getRules(doc.jurisdiction)
   const found = []
 
   for (const node of listNodes(doc)) {
     const check = NODE_TYPES[node.type]?.issues
     if (!check) continue
-    for (const issue of check(node)) found.push({ ...issue, nodeId: node.id })
+    for (const issue of check(node, rules)) found.push({ ...issue, nodeId: node.id })
   }
 
   return found

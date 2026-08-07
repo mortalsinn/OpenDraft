@@ -14,6 +14,8 @@
  * posts that will never be bought.
  */
 
+import { getRules, checkGuard } from './code.js'
+
 /** Defaults in inches. Overridable per node. */
 export const RAILING_DEFAULTS = {
   height: 42, // top of rail above the walking surface
@@ -24,8 +26,10 @@ export const RAILING_DEFAULTS = {
   /* The regulated dimension is the CLEAR GAP, not the picket pitch: no opening
    * may pass a 100mm sphere (3.937"). 3.9 keeps a sliver of margin.
    *
-   * TODO: this is a hard-coded stand-in. The real value depends on jurisdiction
-   * and occupancy and should come from CodeCompass rather than living here. */
+   * This is the DRAWING's setting, not the law. The legal limit belongs to a
+   * jurisdiction (see code.js) and is applied as a check, so a railing drawn
+   * to a looser spacing is drawn as asked and reported as non-compliant rather
+   * than silently corrected. */
 }
 
 const lerp = (a, b, t) => ({
@@ -172,6 +176,23 @@ export function layoutRailing(node) {
     postWidth,
     picketWidth,
   }
+}
+
+/**
+ * Code findings for a railing.
+ *
+ * Checks the gap the railing will ACTUALLY be built to, not just the setting
+ * on the node — a generous `maxGap` that happens to resolve to a legal spacing
+ * is fine, and a tight one that does not is not.
+ */
+export function railingIssues(node, rules = getRules()) {
+  const { gap, runLength } = layoutRailing(node)
+  if (runLength <= 0) return []
+
+  return checkGuard(
+    { height: node.height ?? RAILING_DEFAULTS.height, maxGap: node.maxGap, actualGap: gap },
+    rules,
+  )
 }
 
 /**

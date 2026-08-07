@@ -12,13 +12,16 @@
  * stair.
  */
 
+import { getRules, checkStair } from './code.js'
+
 /**
- * Dimensional limits. Values are the Ontario/National Building Code figures for
- * PRIVATE stairs, converted from the metric the code is actually written in.
+ * Shape defaults for a new stair. The legal LIMITS no longer live here — they
+ * belong to a jurisdiction (see code.js) and are applied as checks, not as
+ * silent constraints on what you are allowed to draw.
  *
- * TODO: occupancy and jurisdiction change every one of these. They live here as
- * parameters precisely so the compliance engine can replace them wholesale
- * rather than hunting for hard-coded numbers.
+ * `minRiser`/`maxRiser` remain only as the band the solver targets when
+ * choosing a riser count; a stair that lands outside the actual code is drawn
+ * as asked and reported as non-compliant.
  */
 export const STAIR_DEFAULTS = {
   totalRise: 108, // 9'-0" floor to floor
@@ -28,12 +31,9 @@ export const STAIR_DEFAULTS = {
   idealRiser: 7, // what a comfortable stair wants to be
   minRiser: 4.92, // 125mm
   maxRiser: 7.87, // 200mm
-  minTread: 10.04, // 255mm
-  headroom: 80.7, // 2050mm
 }
 
-/** Blondel's rule: a comfortable stair keeps 2 x riser + tread in this band. */
-export const COMFORT_BAND = { min: 24, max: 25 }
+export { COMFORT_BAND } from './code.js'
 
 /**
  * Solve the stair.
@@ -88,48 +88,9 @@ export function layoutStair(node) {
  * drawing just has to say so. This is the shape the compliance engine will
  * produce for every object type.
  */
-export function stairIssues(node) {
-  const settings = { ...STAIR_DEFAULTS, ...node }
+export function stairIssues(node, rules = getRules()) {
   const { riserHeight, treadDepth, riserCount } = layoutStair(node)
-  const issues = []
-
-  if (!riserCount) {
-    issues.push({ severity: 'error', code: 'RISE', message: 'Stair has no rise' })
-    return issues
-  }
-
-  if (riserHeight > settings.maxRiser) {
-    issues.push({
-      severity: 'error',
-      code: 'RISER-MAX',
-      message: `Riser ${riserHeight.toFixed(2)}" exceeds the ${settings.maxRiser}" maximum`,
-    })
-  }
-  if (riserHeight < settings.minRiser) {
-    issues.push({
-      severity: 'error',
-      code: 'RISER-MIN',
-      message: `Riser ${riserHeight.toFixed(2)}" is below the ${settings.minRiser}" minimum`,
-    })
-  }
-  if (treadDepth < settings.minTread) {
-    issues.push({
-      severity: 'error',
-      code: 'TREAD-MIN',
-      message: `Tread ${treadDepth}" is below the ${settings.minTread}" minimum`,
-    })
-  }
-
-  const comfort = 2 * riserHeight + treadDepth
-  if (comfort < COMFORT_BAND.min || comfort > COMFORT_BAND.max) {
-    issues.push({
-      severity: 'warning',
-      code: 'COMFORT',
-      message: `2R+T is ${comfort.toFixed(1)}", outside the comfortable ${COMFORT_BAND.min}–${COMFORT_BAND.max}" range`,
-    })
-  }
-
-  return issues
+  return checkStair({ riserHeight, treadDepth, riserCount }, rules)
 }
 
 /**

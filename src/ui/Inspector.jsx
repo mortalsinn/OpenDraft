@@ -5,6 +5,7 @@ import { layoutStair } from '../core/stairs.js'
 import { buildChain } from '../core/chain.js'
 import { polygonAreaSquareFeet, polygonPerimeter } from '../core/polygon.js'
 import { resolveDimension, isAssociative } from '../core/dimension.js'
+import { getRules } from '../core/code.js'
 import { formatLength, parseLength } from '../core/units.js'
 
 /**
@@ -41,7 +42,9 @@ export default function Inspector() {
   const layout = node.type === 'railingRun' ? layoutRailing(node) : null
   const slab = node.type === 'slab'
   const stair = node.type === 'stairRun' ? layoutStair(node) : null
-  const issues = definition?.issues?.(node) ?? []
+  // Judged against the DOCUMENT's jurisdiction, not the default — otherwise
+  // the inspector and the compliance panel could disagree about the same node.
+  const issues = definition?.issues?.(node, getRules(doc.jurisdiction)) ?? []
   const dimension = node.type === 'dimension' ? resolveDimension(doc, node) : null
 
   // Whether promoting this edge would yield a genuine ring — a deck cannot be
@@ -166,6 +169,9 @@ export default function Inspector() {
               }`}
             >
               {issue.message}
+              {issue.citation && (
+                <span className="mt-0.5 block text-slate-500">{issue.citation}</span>
+              )}
             </li>
           ))}
         </ul>

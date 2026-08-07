@@ -50,6 +50,16 @@ export const useDraft = create((set, get) => ({
 
   setProjectName: (projectName) => set({ projectName }),
 
+  /**
+   * Judge the drawing against a different code. Deliberately only changes what
+   * is REPORTED — geometry is left exactly as drawn, because silently
+   * reshaping a drawing someone has already checked is not acceptable.
+   */
+  setJurisdiction: (jurisdiction) => {
+    const { doc, commit } = get()
+    commit({ ...doc, jurisdiction })
+  },
+
   setTool: (tool) => set({ tool, anchor: null, pendingAnchor: null, typed: '', lockedAxis: null }),
   select: (selection) => set({ selection }),
   setView: (view) => set({ view }),
