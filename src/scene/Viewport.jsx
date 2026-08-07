@@ -121,6 +121,9 @@ function PointerBridge() {
         worldPerPixel: worldPerPixel(),
         gridStep: state.gridStep,
         lockedAxis: state.lockedAxis,
+        polarIncrement: state.polarIncrement,
+        polarHard: state.polarHard,
+        disabledSnaps: new Set(state.disabledSnaps),
       })
 
       state.setSnap(snap)

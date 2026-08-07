@@ -86,6 +86,23 @@ export const useDraft = create((set, get) => ({
   typed: '',
   view: 'plan',
   gridStep: 12,
+
+  /**
+   * Precision aids. `polarIncrement` is in radians; ortho is simply 90°.
+   * `disabledSnaps` silences individual snap kinds — object snapping is
+   * wonderful until the one you do not want keeps winning.
+   */
+  polarIncrement: 0,
+  polarHard: false,
+  disabledSnaps: [],
+  setPolarIncrement: (degrees, hard = false) =>
+    set({ polarIncrement: degrees > 0 ? (degrees * Math.PI) / 180 : 0, polarHard: hard }),
+  toggleSnap: (kind) =>
+    set((state) => ({
+      disabledSnaps: state.disabledSnaps.includes(kind)
+        ? state.disabledSnaps.filter((k) => k !== kind)
+        : [...state.disabledSnaps, kind],
+    })),
   projectName: 'Untitled',
 
   setProjectName: (projectName) => set({ projectName }),
@@ -643,6 +660,26 @@ export const useDraft = create((set, get) => ({
       const base = pushPull ? updateNode(doc, id, { [key]: pushPull.startValue }) : doc
       set({ doc: base, pushPull: null, typed: '' })
       get().commit(updateNode(base, id, { [key]: value }))
+      return
+    }
+
+    // With a line under way, a PAIR is a relative displacement — `120,96`
+    // means 120 across and 96 up from where you are, which is how a drafter
+    // enters a point they know the offset to but not the angle of.
+    if (anchor && typed.includes(',')) {
+      const delta = parsePair(typed, parseLength)
+      if (!delta) {
+        set({ typed: '' })
+        return
+      }
+
+      const end = {
+        x: snapToFraction(anchor.x + delta.x),
+        y: snapToFraction(anchor.y + delta.y),
+        z: anchor.z ?? 0,
+      }
+      commit(addNode(doc, 'edge', { start: anchor, end, layer: get().activeLayer }))
+      set({ anchor: end, typed: '', lockedAxis: null })
       return
     }
 

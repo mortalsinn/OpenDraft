@@ -161,6 +161,70 @@ describe('supplied snap points', () => {
   })
 })
 
+describe('polar tracking', () => {
+  const anchor = p(0, 0)
+  const polar = { ...base, anchor, segments: [], polarIncrement: Math.PI / 4 } // 45°
+
+  it('holds the direction to the nearest increment', () => {
+    // Aiming at roughly 40° should land exactly on 45°.
+    const result = infer({ ...polar, cursor: p(76.6, 64.3) })
+    expect(result.kind).toBe('polar')
+
+    const angle = (Math.atan2(result.point.y, result.point.x) * 180) / Math.PI
+    expect(angle).toBeCloseTo(45, 6)
+  })
+
+  it('never projects backwards from the anchor', () => {
+    // Projecting behind the anchor would silently draw the opposite way from
+    // where the cursor actually is.
+    const result = infer({ ...polar, cursor: p(-80, -3) })
+    if (result.kind === 'polar') {
+      expect(result.point.x).toBeLessThanOrEqual(0)
+    }
+  })
+
+  it('loses to a real endpoint that happens to be off-angle', () => {
+    // Object snaps outrank tracking — that is what makes tracking usable.
+    const result = infer({
+      ...polar,
+      cursor: p(99, 3),
+      segments: [{ id: 'e1', start: p(0, 0), end: p(100, 5) }],
+    })
+    expect(result.kind).toBe('endpoint')
+  })
+
+  it('does nothing without an anchor to track from', () => {
+    const result = infer({ ...base, cursor: p(50, 50), segments: [], polarIncrement: Math.PI / 4 })
+    expect(result.kind).not.toBe('polar')
+  })
+})
+
+describe('disabled snaps', () => {
+  it('silences a kind the user switched off', () => {
+    // Object snaps are wonderful until the one you do not want keeps winning.
+    const withMidpoint = infer({ ...base, cursor: p(50, 2), segments: [horizontal] })
+    expect(withMidpoint.kind).toBe('midpoint')
+
+    const without = infer({
+      ...base,
+      cursor: p(50, 2),
+      segments: [horizontal],
+      disabledSnaps: new Set(['midpoint']),
+    })
+    expect(without.kind).toBe('onEdge')
+  })
+
+  it('can be switched off entirely, leaving the raw cursor', () => {
+    const result = infer({
+      ...base,
+      cursor: p(100, 0),
+      segments: [horizontal],
+      disabledSnaps: new Set(['endpoint', 'midpoint', 'onEdge', 'extension', 'intersection']),
+    })
+    expect(result.kind).toBe('free')
+  })
+})
+
 describe('grid', () => {
   it('snaps to the grid when nothing better is available', () => {
     const result = infer({ ...base, cursor: p(11, 23), segments: [], gridStep: 12 })

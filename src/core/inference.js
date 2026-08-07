@@ -29,6 +29,7 @@ export const SNAP_KINDS = {
   axisX: { priority: 4, color: '#ef4444', label: 'On red axis' },
   axisY: { priority: 4, color: '#22c55e', label: 'On green axis' },
   axisZ: { priority: 4, color: '#3b82f6', label: 'On blue axis' },
+  polar: { priority: 4, color: '#f59e0b', label: 'Polar' },
   extension: { priority: 5, color: '#a855f7', label: 'On extension' },
   perpendicular: { priority: 5, color: '#a855f7', label: 'Perpendicular' },
   parallel: { priority: 5, color: '#a855f7', label: 'Parallel' },
@@ -43,6 +44,13 @@ export const SNAP_KINDS = {
  * an infinite guide.
  */
 const EXTENSION_REACH = 1
+
+/**
+ * How near an increment you must be aiming for soft polar tracking to grab, in
+ * radians. Seven degrees is wide enough to catch a deliberate aim and narrow
+ * enough not to fight a freehand one.
+ */
+const POLAR_ANGLE_WINDOW = (7 * Math.PI) / 180
 
 const AXES = [
   { kind: 'axisX', vector: { x: 1, y: 0, z: 0 } },
@@ -134,11 +142,28 @@ export function infer({
   pixelTolerance = 10,
   gridStep = 0,
   lockedAxis = null,
+  /**
+   * Direction increment in RADIANS for polar tracking, or 0 for none. Ortho is
+   * simply this at 90°.
+   */
+  polarIncrement = 0,
+  /**
+   * True for ortho — a hard constraint that always holds the direction.
+   * False for softer increments, which only grab when you aim near one.
+   */
+  polarHard = false,
+  /**
+   * Snap kinds the user has switched off. Object snaps are enormously useful
+   * until the one you do not want keeps winning, at which point being able to
+   * silence it is the difference between precise and infuriating.
+   */
+  disabledSnaps = null,
 }) {
   const tolerance = pixelTolerance * worldPerPixel
   const candidates = []
 
   const consider = (kind, candidatePoint, refs = []) => {
+    if (disabledSnaps?.has(kind)) return
     const d = dist(cursor, candidatePoint)
     if (d > tolerance) return
     candidates.push({ kind, point: candidatePoint, refs, distance: d })
@@ -223,6 +248,41 @@ export function infer({
   if (anchor) {
     for (const axis of AXES) {
       consider(axis.kind, projectOnLine(cursor, anchor, axis.vector))
+    }
+
+    // Polar tracking: hold the direction to the nearest increment and solve
+    // only for distance along it. Object snaps still outrank this, which is
+    // what lets you land on a real endpoint that happens to be off-angle.
+    //
+    // Engagement is measured in ANGLE, not distance. A distance tolerance
+    // would only catch the ray once the cursor was already almost on it, which
+    // defeats the point — the further out you draw, the further the same few
+    // degrees carries you from the line.
+    if (polarIncrement > 0) {
+      const heading = Math.atan2(cursor.y - anchor.y, cursor.x - anchor.x)
+      const held = Math.round(heading / polarIncrement) * polarIncrement
+
+      // Ortho is a hard constraint; softer increments only grab when you are
+      // genuinely aiming near one.
+      const window = polarHard ? polarIncrement / 2 : POLAR_ANGLE_WINDOW
+      let deviation = Math.abs(heading - held)
+      if (deviation > Math.PI) deviation = Math.PI * 2 - deviation
+
+      if (deviation <= window) {
+        const direction = point(Math.cos(held), Math.sin(held), 0)
+        const projected = projectOnLine(cursor, anchor, direction)
+
+        // Only ahead of the anchor — projecting backwards would silently draw
+        // the opposite way from where the cursor is.
+        if (dot(sub(projected, anchor), direction) >= 0) {
+          candidates.push({
+            kind: 'polar',
+            point: projected,
+            refs: [],
+            distance: dist(cursor, projected),
+          })
+        }
+      }
     }
 
     for (const segment of segments) {
