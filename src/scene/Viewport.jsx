@@ -10,6 +10,8 @@ import { railingSegments } from '../core/railing.js'
 import Railing from './Railing.jsx'
 import Slab from './Slab.jsx'
 import Stair from './Stair.jsx'
+import Dimension from './Dimension.jsx'
+import Note from './Note.jsx'
 
 // Z-up, like every CAD tool and like SketchUp. Plan view then looks straight
 // down -Z and 2D drafting happens on the XY plane, which keeps the plan-view
@@ -204,13 +206,21 @@ function Geometry() {
   const doc = useDraft((s) => s.doc)
   const selection = useDraft((s) => s.selection)
 
-  const nodes = useMemo(
-    () => Object.values(doc.nodes).filter((n) => (n.start && n.end) || n.points?.length >= 2),
-    [doc],
-  )
+  const nodes = useMemo(() => Object.values(doc.nodes), [doc])
 
   return nodes.map((node) => {
     const selected = node.id === selection
+
+    if (node.type === 'dimension') {
+      return <Dimension key={node.id} doc={doc} node={node} selected={selected} />
+    }
+
+    if (node.type === 'note') {
+      return <Note key={node.id} node={node} selected={selected} />
+    }
+
+    // Everything below needs geometry to draw.
+    if (!node.start && !(node.points?.length >= 2)) return null
 
     if (node.type === 'slab') {
       return <Slab key={node.id} node={node} selected={selected} />

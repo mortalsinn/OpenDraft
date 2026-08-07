@@ -154,6 +154,25 @@ export const NODE_TYPES = {
     ],
     pushPull: 'totalRise',
   },
+
+  /**
+   * An associative dimension. Holds references to what it measures, not a
+   * copy of the numbers — see dimension.js for why that distinction matters.
+   */
+  dimension: {
+    label: 'Dimension',
+    create: ({ from, to, offset = 12 }) => ({ from, to, offset }),
+    quantities: () => [],
+    editable: [{ key: 'offset', label: 'Offset', min: -240, max: 240 }],
+  },
+
+  /** A text note, optionally with a leader pointing at something. */
+  note: {
+    label: 'Note',
+    create: ({ position, text = 'Note', leader = null }) => ({ position, text, leader }),
+    quantities: () => [],
+    editable: [],
+  },
 }
 
 /** Euclidean distance between two {x, y, z} points. */
@@ -258,6 +277,31 @@ export function removeNode(doc, id) {
   const nodes = { ...doc.nodes }
   delete nodes[id]
   return { ...doc, nodes, order: doc.order.filter((n) => n !== id) }
+}
+
+/** Ids of the dimensions that measure `id`. */
+export function dependentsOf(doc, id) {
+  return listNodes(doc)
+    .filter(
+      (node) =>
+        node.type === 'dimension' &&
+        (node.from?.nodeId === id || node.to?.nodeId === id),
+    )
+    .map((node) => node.id)
+}
+
+/**
+ * Remove a node and anything that only existed to describe it.
+ *
+ * A dimension whose target is gone renders nothing at all, which would leave an
+ * invisible node in the document that cannot be found or selected to clean up.
+ * Taking them together — in one commit, so one undo brings both back — avoids
+ * ever creating that orphan.
+ */
+export function removeNodeCascade(doc, id) {
+  let next = removeNode(doc, id)
+  for (const dependent of dependentsOf(doc, id)) next = removeNode(next, dependent)
+  return next
 }
 
 /** All nodes in draw order. */

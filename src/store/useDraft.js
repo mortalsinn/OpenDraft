@@ -6,12 +6,14 @@ import {
   convertNode,
   promoteChain,
   removeNode,
+  removeNodeCascade,
   computeTakeoff,
   listSegments,
   NODE_TYPES,
 } from '../core/doc.js'
 import { parseLength, snapToFraction } from '../core/units.js'
 import { saveDocument, loadDocument, clearDocument } from '../core/persist.js'
+import { makeAnchor } from '../core/dimension.js'
 
 /**
  * Interaction state.
@@ -31,6 +33,8 @@ export const useDraft = create((set, get) => ({
   tool: 'line',
   /** Where the in-progress line began, or null when not drawing. */
   anchor: null,
+  /** First end of a dimension being placed. */
+  pendingAnchor: null,
   /** Latest inference result, written every pointer move by the viewport. */
   snap: null,
   /** 'axisX' | 'axisY' | 'axisZ' | null — set by arrow keys. */
@@ -40,7 +44,7 @@ export const useDraft = create((set, get) => ({
   view: 'plan',
   gridStep: 12,
 
-  setTool: (tool) => set({ tool, anchor: null, typed: '', lockedAxis: null }),
+  setTool: (tool) => set({ tool, anchor: null, pendingAnchor: null, typed: '', lockedAxis: null }),
   select: (selection) => set({ selection }),
   setView: (view) => set({ view }),
   setSnap: (snap) => set({ snap }),
@@ -131,7 +135,9 @@ export const useDraft = create((set, get) => ({
   deleteSelection: () => {
     const { selection, doc, commit } = get()
     if (!selection || !doc.nodes[selection]) return
-    commit(removeNode(doc, selection))
+    // Cascades to the dimensions that measured it, so no invisible orphans
+    // are left behind. One undo restores the lot.
+    commit(removeNodeCascade(doc, selection))
     set({ selection: null })
   },
 
@@ -181,6 +187,27 @@ export const useDraft = create((set, get) => ({
    */
   clickPoint: (point, snapRefs = []) => {
     const { anchor, commit, doc, tool } = get()
+
+    // The dimension tool takes two clicks: the first parks an anchor, the
+    // second creates the dimension between them.
+    if (tool === 'dimension') {
+      const anchor = makeAnchor(doc, point, snapRefs)
+      const { pendingAnchor } = get()
+
+      if (!pendingAnchor) {
+        set({ pendingAnchor: anchor })
+        return
+      }
+
+      commit(addNode(doc, 'dimension', { from: pendingAnchor, to: anchor }))
+      set({ pendingAnchor: null })
+      return
+    }
+
+    if (tool === 'note') {
+      commit(addNode(doc, 'note', { position: point, text: 'Note' }))
+      return
+    }
 
     if (tool === 'select') {
       // The inference engine already worked out which node is under the
@@ -262,7 +289,14 @@ export const useDraft = create((set, get) => ({
   },
 
   /** Escape: abandon the in-progress line without touching the document. */
-  cancel: () => set({ anchor: null, typed: '', lockedAxis: null }),
+  cancel: () => set({ anchor: null, pendingAnchor: null, typed: '', lockedAxis: null }),
+
+  /** Change a note's text. */
+  setNoteText: (id, text) => {
+    const { doc, commit } = get()
+    if (doc.nodes[id]?.type !== 'note') return
+    commit(updateNode(doc, id, { text }))
+  },
 
   segments: () => listSegments(get().doc),
   takeoff: () => computeTakeoff(get().doc),

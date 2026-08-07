@@ -29,6 +29,8 @@ export default function App() {
             ['line', 'Line'],
             ['select', 'Select'],
             ['pushpull', 'Push/Pull'],
+            ['dimension', 'Dimension'],
+            ['note', 'Note'],
           ].map(([mode, label]) => (
             <button
               key={mode}
@@ -85,6 +87,9 @@ export default function App() {
             {tool === 'select' && 'Click a line to select it, then edit or promote it on the right'}
             {tool === 'pushpull' &&
               'Select something first, then drag up or down · type a size and press Enter'}
+            {tool === 'dimension' &&
+              'Click two points · snapping to a corner binds the dimension so it follows the geometry'}
+            {tool === 'note' && 'Click to drop a note, then edit its text on the right'}
           </span>
         </div>
       </header>

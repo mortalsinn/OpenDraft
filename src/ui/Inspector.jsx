@@ -4,6 +4,7 @@ import { layoutRailing } from '../core/railing.js'
 import { layoutStair } from '../core/stairs.js'
 import { buildChain } from '../core/chain.js'
 import { polygonAreaSquareFeet, polygonPerimeter } from '../core/polygon.js'
+import { resolveDimension, isAssociative } from '../core/dimension.js'
 import { formatLength, parseLength } from '../core/units.js'
 
 /**
@@ -19,6 +20,7 @@ export default function Inspector() {
   const promote = useDraft((s) => s.promoteSelection)
   const edit = useDraft((s) => s.editSelection)
   const remove = useDraft((s) => s.deleteSelection)
+  const setNoteText = useDraft((s) => s.setNoteText)
 
   const node = selection ? doc.nodes[selection] : null
 
@@ -40,6 +42,7 @@ export default function Inspector() {
   const slab = node.type === 'slab'
   const stair = node.type === 'stairRun' ? layoutStair(node) : null
   const issues = definition?.issues?.(node) ?? []
+  const dimension = node.type === 'dimension' ? resolveDimension(doc, node) : null
 
   // Whether promoting this edge would yield a genuine ring — a deck cannot be
   // made from an open chain without inventing an edge nobody drew.
@@ -112,6 +115,34 @@ export default function Inspector() {
           <Readout label="Posts" value={layout.posts.length} />
           <Readout label="Actual gap" value={formatLength(layout.gap, { denominator: 32 })} />
         </div>
+      )}
+
+      {node.type === 'dimension' && (
+        <div className="mb-3 rounded bg-white/5 px-2 py-1.5 text-xs">
+          {dimension ? (
+            <>
+              <Readout label="Measures" value={formatLength(dimension.length)} />
+              <Readout
+                label="Binding"
+                value={isAssociative(node) ? 'follows geometry' : 'fixed points'}
+              />
+            </>
+          ) : (
+            <p className="text-red-300">
+              Broken — what this measured has been deleted.
+            </p>
+          )}
+        </div>
+      )}
+
+      {node.type === 'note' && (
+        <textarea
+          value={node.text}
+          onChange={(event) => setNoteText(node.id, event.target.value)}
+          onKeyDown={(event) => event.stopPropagation()}
+          rows={3}
+          className="mb-3 w-full resize-none rounded bg-slate-800 px-2 py-1.5 text-xs text-slate-100 outline-none ring-1 ring-white/10 focus:ring-amber-500"
+        />
       )}
 
       {stair && (
