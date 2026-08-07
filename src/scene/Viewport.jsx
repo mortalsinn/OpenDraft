@@ -7,6 +7,7 @@ import { infer } from '../core/inference.js'
 import { formatLength } from '../core/units.js'
 import { distance, listSegments } from '../core/doc.js'
 import { railingSegments } from '../core/railing.js'
+import { isVisible } from '../core/layers.js'
 import Railing from './Railing.jsx'
 import Slab from './Slab.jsx'
 import Stair from './Stair.jsx'
@@ -220,7 +221,12 @@ function Geometry() {
   const doc = useDraft((s) => s.doc)
   const selection = useDraft((s) => s.selection)
 
-  const nodes = useMemo(() => Object.values(doc.nodes), [doc])
+  // Hidden layers drop out of the scene entirely. They stay in the document,
+  // and — deliberately — stay in the takeoff.
+  const nodes = useMemo(
+    () => Object.values(doc.nodes).filter((node) => isVisible(doc, node)),
+    [doc],
+  )
 
   return nodes.map((node) => {
     const selected = node.id === selection

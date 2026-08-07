@@ -17,6 +17,13 @@ import {
 import { parseLength, snapToFraction } from '../core/units.js'
 import { saveDocument, loadDocument, clearDocument } from '../core/persist.js'
 import { makeAnchor } from '../core/dimension.js'
+import {
+  DEFAULT_LAYER_ID,
+  addLayer,
+  updateLayer,
+  removeLayer,
+  assignLayer,
+} from '../core/layers.js'
 
 /**
  * Interaction state.
@@ -58,6 +65,38 @@ export const useDraft = create((set, get) => ({
   setJurisdiction: (jurisdiction) => {
     const { doc, commit } = get()
     commit({ ...doc, jurisdiction })
+  },
+
+  /** Which layer new geometry lands on. */
+  activeLayer: DEFAULT_LAYER_ID,
+  setActiveLayer: (activeLayer) => set({ activeLayer }),
+
+  toggleLayer: (id, flag) => {
+    const { doc, commit } = get()
+    const layer = doc.layers?.[id]
+    if (!layer) return
+    commit(updateLayer(doc, id, { [flag]: !layer[flag] }))
+  },
+
+  newLayer: () => {
+    const { doc, commit } = get()
+    const index = (doc.layerOrder?.length ?? 0) + 1
+    const id = `layer-${index}-${Object.keys(doc.layers ?? {}).length}`
+    commit(addLayer(doc, id, `Layer ${index}`))
+    set({ activeLayer: id })
+  },
+
+  deleteLayer: (id) => {
+    const { doc, commit, activeLayer } = get()
+    commit(removeLayer(doc, id))
+    if (activeLayer === id) set({ activeLayer: DEFAULT_LAYER_ID })
+  },
+
+  /** Move the selected object onto a layer. */
+  assignSelectionToLayer: (layerId) => {
+    const { doc, commit, selection } = get()
+    if (!selection) return
+    commit(assignLayer(doc, selection, layerId))
   },
 
   setTool: (tool) => set({ tool, anchor: null, pendingAnchor: null, typed: '', lockedAxis: null }),
@@ -282,13 +321,13 @@ export const useDraft = create((set, get) => ({
         return
       }
 
-      commit(addNode(doc, 'dimension', { from: pendingAnchor, to: anchor }))
+      commit(addNode(doc, 'dimension', { from: pendingAnchor, to: anchor, layer: get().activeLayer }))
       set({ pendingAnchor: null })
       return
     }
 
     if (tool === 'note') {
-      commit(addNode(doc, 'note', { position: point, text: 'Note' }))
+      commit(addNode(doc, 'note', { position: point, text: 'Note', layer: get().activeLayer }))
       return
     }
 
@@ -306,7 +345,7 @@ export const useDraft = create((set, get) => ({
 
     if (samePoint(anchor, point)) return // zero-length; ignore
 
-    commit(addNode(doc, 'edge', { start: anchor, end: snapPoint(point) }))
+    commit(addNode(doc, 'edge', { start: anchor, end: snapPoint(point), layer: get().activeLayer }))
     set({ anchor: snapPoint(point), typed: '', lockedAxis: null })
   },
 
@@ -367,7 +406,7 @@ export const useDraft = create((set, get) => ({
       z: snapToFraction((anchor.z ?? 0) + direction.z * requested),
     }
 
-    commit(addNode(doc, 'edge', { start: anchor, end }))
+    commit(addNode(doc, 'edge', { start: anchor, end, layer: get().activeLayer }))
     set({ anchor: end, typed: '', lockedAxis: null })
   },
 

@@ -4,6 +4,7 @@ import TakeoffPanel from './ui/TakeoffPanel.jsx'
 import Inspector from './ui/Inspector.jsx'
 import ExportMenu from './ui/ExportMenu.jsx'
 import CompliancePanel from './ui/CompliancePanel.jsx'
+import LayersPanel from './ui/LayersPanel.jsx'
 import { useDraft } from './store/useDraft.js'
 
 const SEGMENTED = 'px-3 py-1 text-xs font-medium transition'
@@ -123,6 +124,7 @@ export default function App() {
         </main>
         <aside className="flex w-72 shrink-0 flex-col overflow-y-auto border-l border-white/10 bg-slate-900/60">
           <Inspector />
+          <LayersPanel />
           <CompliancePanel />
           <TakeoffPanel />
           <ExportMenu />

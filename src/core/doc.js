@@ -21,6 +21,7 @@ import { buildChain } from './chain.js'
 import { polygonArea, polygonAreaSquareFeet, polygonPerimeter } from './polygon.js'
 import { stairQuantities, stairIssues, STAIR_DEFAULTS } from './stairs.js'
 import { getRules, DEFAULT_JURISDICTION } from './code.js'
+import { defaultLayers, DEFAULT_LAYER_ID, countsInTakeoff, isSelectable } from './layers.js'
 
 /** Monotonic id source. */
 let nextId = 1
@@ -191,6 +192,7 @@ export function createDocument() {
     schemaVersion: SCHEMA_VERSION,
     units: 'imperial',
     jurisdiction: DEFAULT_JURISDICTION,
+    ...defaultLayers(),
     nodes: {},
     order: [],
   }
@@ -205,7 +207,12 @@ export function addNode(doc, type, params) {
   if (!definition) throw new Error(`Unknown node type: ${type}`)
 
   const id = makeId(type === 'edge' ? 'e' : 'n')
-  const node = { id, type, ...definition.create(params) }
+  const node = {
+    id,
+    type,
+    layer: params.layer ?? doc.activeLayer ?? DEFAULT_LAYER_ID,
+    ...definition.create(params),
+  }
 
   return {
     ...doc,
@@ -362,6 +369,10 @@ export function listSegments(doc) {
   const segments = []
 
   for (const node of listNodes(doc)) {
+    // You cannot snap to what you cannot see, and you cannot grab what is
+    // locked — so hidden and locked layers are simply absent from inference.
+    if (!isSelectable(doc, node)) continue
+
     if (node.points?.length >= 2) {
       for (const [start, end] of railingSegments(node)) {
         segments.push({ id: node.id, start, end })
@@ -375,7 +386,7 @@ export function listSegments(doc) {
 }
 
 /** The current document schema. Bump when a load-time migration is needed. */
-export const SCHEMA_VERSION = 2
+export const SCHEMA_VERSION = 3
 
 /**
  * Bring an older document up to the current schema.
@@ -384,11 +395,17 @@ export const SCHEMA_VERSION = 2
  * corners. Rewrite them as two-point polylines.
  */
 export function migrateDocument(doc) {
-  if (!doc || doc.schemaVersion === SCHEMA_VERSION) return doc
+  if (!doc) return null
+  if (doc.schemaVersion === SCHEMA_VERSION) return doc
+  if (doc.schemaVersion > SCHEMA_VERSION) return null // from a future version
 
-  if (doc.schemaVersion === 1) {
+  let migrated = doc
+
+  // v1 -> v2: railing runs were a single start/end pair before runs could turn
+  // corners. Rewrite them as two-point polylines.
+  if (migrated.schemaVersion === 1) {
     const nodes = {}
-    for (const [id, node] of Object.entries(doc.nodes ?? {})) {
+    for (const [id, node] of Object.entries(migrated.nodes ?? {})) {
       if (node.type === 'railingRun' && !node.points && node.start && node.end) {
         const { start, end, ...rest } = node
         nodes[id] = { ...rest, points: [start, end], closed: false }
@@ -396,10 +413,19 @@ export function migrateDocument(doc) {
         nodes[id] = node
       }
     }
-    return { ...doc, schemaVersion: SCHEMA_VERSION, nodes }
+    migrated = { ...migrated, schemaVersion: 2, nodes }
   }
 
-  return null // unknown schema — caller should start fresh rather than guess
+  // v2 -> v3: layers. Everything that already existed lands on the default.
+  if (migrated.schemaVersion === 2) {
+    const nodes = {}
+    for (const [id, node] of Object.entries(migrated.nodes ?? {})) {
+      nodes[id] = node.layer ? node : { ...node, layer: DEFAULT_LAYER_ID }
+    }
+    migrated = { ...migrated, schemaVersion: 3, ...defaultLayers(), nodes }
+  }
+
+  return migrated.schemaVersion === SCHEMA_VERSION ? migrated : null
 }
 
 /**
@@ -428,6 +454,11 @@ export function computeTakeoff(doc) {
   const merged = new Map()
 
   for (const node of listNodes(doc)) {
+    // Hidden is NOT the same as excluded. Something hidden to see behind it
+    // still gets built and still gets bought; only an explicit exclusion keeps
+    // a layer out of the quote.
+    if (!countsInTakeoff(doc, node)) continue
+
     const definition = NODE_TYPES[node.type]
     if (!definition?.quantities) continue
 
