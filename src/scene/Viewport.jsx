@@ -5,7 +5,7 @@ import * as THREE from 'three'
 import { useDraft } from '../store/useDraft.js'
 import { infer } from '../core/inference.js'
 import { formatLength } from '../core/units.js'
-import { distance, listSegments } from '../core/doc.js'
+import { distance, listSegments, listSnapPoints, curveOutline } from '../core/doc.js'
 import { railingSegments } from '../core/railing.js'
 import { isVisible } from '../core/layers.js'
 import { instantiate } from '../core/components.js'
@@ -115,6 +115,7 @@ function PointerBridge() {
         // While moving, the object being dragged is excluded from inference —
         // otherwise it snaps to its own vertices and sticks to where it was.
         segments: listSegments(state.doc).filter((s) => s.id !== state.moving?.id),
+        extraPoints: listSnapPoints(state.doc).filter((p) => p.refs[0] !== state.moving?.id),
         anchor: state.anchor,
         worldPerPixel: worldPerPixel(),
         gridStep: state.gridStep,
@@ -241,6 +242,18 @@ function NodeView({ doc, node, selected }) {
           <NodeView key={inner.id} doc={doc} node={inner} selected={selected} />
         ))}
       </group>
+    )
+  }
+
+  const curve = curveOutline(node)
+  if (curve) {
+    const points = curve.closed ? [...curve.points, curve.points[0]] : curve.points
+    return (
+      <Line
+        points={points.map((p) => [p.x, p.y, p.z ?? 0])}
+        color={selected ? '#fbbf24' : '#e2e8f0'}
+        lineWidth={selected ? 4 : 2}
+      />
     )
   }
 

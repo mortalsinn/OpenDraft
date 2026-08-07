@@ -111,6 +111,56 @@ describe('axis inference', () => {
   })
 })
 
+describe('curve chords', () => {
+  /** Two chords of a tessellated circle. */
+  const chords = [
+    { id: 'c1', start: p(0, 0), end: p(10, 2), curve: true },
+    { id: 'c1', start: p(10, 2), end: p(20, 0), curve: true },
+  ]
+
+  it('offers no endpoint or midpoint snap', () => {
+    // A tessellation vertex is an artefact of how finely we subdivided, not a
+    // feature of the drawing. Without this one circle litters the model with
+    // seventy meaningless endpoints.
+    const atVertex = infer({ ...base, cursor: p(10, 2), segments: chords })
+    expect(atVertex.kind).not.toBe('endpoint')
+    expect(atVertex.kind).not.toBe('midpoint')
+  })
+
+  it('still snaps onto the curve itself', () => {
+    const onCurve = infer({ ...base, cursor: p(5, 2), segments: chords })
+    expect(onCurve.kind).toBe('onEdge')
+  })
+
+  it('leaves ordinary segments alone', () => {
+    const straight = [{ id: 'e1', start: p(0, 0), end: p(20, 0) }]
+    expect(infer({ ...base, cursor: p(0, 1), segments: straight }).kind).toBe('endpoint')
+  })
+})
+
+describe('supplied snap points', () => {
+  it('offers a centre, which no segment could ever produce', () => {
+    const result = infer({
+      ...base,
+      cursor: p(50, 50),
+      segments: [],
+      extraPoints: [{ kind: 'centre', point: p(52, 52), refs: ['c1'] }],
+    })
+    expect(result.kind).toBe('centre')
+    expect(result.refs).toEqual(['c1'])
+  })
+
+  it('ranks a quadrant below a real endpoint', () => {
+    const result = infer({
+      ...base,
+      cursor: p(100, 1),
+      segments: [horizontal],
+      extraPoints: [{ kind: 'quadrant', point: p(100, 2), refs: ['c1'] }],
+    })
+    expect(result.kind).toBe('endpoint')
+  })
+})
+
 describe('grid', () => {
   it('snaps to the grid when nothing better is available', () => {
     const result = infer({ ...base, cursor: p(11, 23), segments: [], gridStep: 12 })

@@ -18,6 +18,7 @@ import {
   NODE_TYPES,
 } from '../core/doc.js'
 import { SHAPE_TOOLS, parsePair } from '../core/shapes.js'
+import { arcThroughPoints } from '../core/curves.js'
 import { parseLength, snapToFraction } from '../core/units.js'
 import { saveDocument, loadDocument, clearDocument } from '../core/persist.js'
 import { makeAnchor } from '../core/dimension.js'
@@ -51,6 +52,8 @@ export const useDraft = create((set, get) => ({
   pendingAnchor: null,
   /** Base point of a shape being drawn — first corner, or centre. */
   shapeBase: null,
+  /** Second point of a three-point arc. */
+  arcSecond: null,
   polygonSides: 6,
   setPolygonSides: (polygonSides) => set({ polygonSides: Math.max(3, Math.round(polygonSides)) }),
   /** Latest inference result, written every pointer move by the viewport. */
@@ -121,7 +124,15 @@ export const useDraft = create((set, get) => ({
   },
 
   setTool: (tool) =>
-    set({ tool, anchor: null, pendingAnchor: null, shapeBase: null, typed: '', lockedAxis: null }),
+    set({
+      tool,
+      anchor: null,
+      pendingAnchor: null,
+      shapeBase: null,
+      arcSecond: null,
+      typed: '',
+      lockedAxis: null,
+    }),
   select: (selection) => set({ selection }),
   setView: (view) => set({ view }),
   setSnap: (snap) => set({ snap }),
@@ -348,6 +359,53 @@ export const useDraft = create((set, get) => ({
       return
     }
 
+    // Circle: centre, then a point on the rim.
+    if (tool === 'circle') {
+      const { shapeBase } = get()
+      if (!shapeBase) {
+        set({ shapeBase: point, typed: '' })
+        return
+      }
+
+      const radius = Math.hypot(point.x - shapeBase.x, point.y - shapeBase.y)
+      if (radius > 0) {
+        commit(addNode(doc, 'circle', { centre: shapeBase, radius, layer: get().activeLayer }))
+      }
+      set({ shapeBase: null, typed: '' })
+      return
+    }
+
+    // Arc through three points: two ends, then a point it passes through.
+    if (tool === 'arc') {
+      const { shapeBase, arcSecond } = get()
+
+      if (!shapeBase) {
+        set({ shapeBase: point, arcSecond: null, typed: '' })
+        return
+      }
+      if (!arcSecond) {
+        set({ arcSecond: point })
+        return
+      }
+
+      // The third click is the point the arc bulges through, so `point` is the
+      // middle of the sweep and arcSecond is the far end.
+      const fitted = arcThroughPoints(shapeBase, point, arcSecond)
+      if (fitted) {
+        commit(
+          addNode(doc, 'arc', {
+            centre: fitted.centre,
+            radius: fitted.radius,
+            startAngle: fitted.startAngle,
+            endAngle: fitted.endAngle,
+            layer: get().activeLayer,
+          }),
+        )
+      }
+      set({ shapeBase: null, arcSecond: null, typed: '' })
+      return
+    }
+
     // Two-click shapes: the first click parks a base point, the second
     // resolves the shape and commits it as chained edges.
     if (SHAPE_TOOLS[tool]) {
@@ -472,7 +530,14 @@ export const useDraft = create((set, get) => ({
 
   /** Escape: abandon the in-progress line without touching the document. */
   cancel: () =>
-    set({ anchor: null, pendingAnchor: null, shapeBase: null, typed: '', lockedAxis: null }),
+    set({
+      anchor: null,
+      pendingAnchor: null,
+      shapeBase: null,
+      arcSecond: null,
+      typed: '',
+      lockedAxis: null,
+    }),
 
   /** Change a note's text. */
   setNoteText: (id, text) => {

@@ -24,6 +24,14 @@ import { getRules, DEFAULT_JURISDICTION } from './code.js'
 import { defaultLayers, DEFAULT_LAYER_ID, countsInTakeoff, isSelectable } from './layers.js'
 import { instantiate, extractDefinition } from './components.js'
 import { nodeVertices, withVertices } from './vertices.js'
+import {
+  circlePoints,
+  arcPoints,
+  circleCircumference,
+  arcLength,
+  quadrantPoints,
+  pointOnCircle,
+} from './curves.js'
 
 /** Monotonic id source. */
 let nextId = 1
@@ -181,6 +189,46 @@ export const NODE_TYPES = {
     // Quantities come from expanding the definition; see computeTakeoff.
     quantities: () => [],
     editable: [{ key: 'rotation', label: 'Rotation', min: -Math.PI * 2, max: Math.PI * 2 }],
+  },
+
+  /**
+   * A circle. Stored exactly — a centre and a radius — and tessellated only
+   * where something needs straight lines. Its circumference is read from the
+   * radius, never from the chords.
+   */
+  circle: {
+    label: 'Circle',
+    create: ({ centre, radius }) => ({ centre, radius }),
+    quantities: (node) =>
+      node.radius > 0
+        ? [{ sku: 'CURVE', description: 'Curved rail', unit: 'in', quantity: circleCircumference(node.radius) }]
+        : [],
+    editable: [{ key: 'radius', label: 'Radius', min: 0.25, max: 6000 }],
+    pushPull: 'radius',
+  },
+
+  /** An arc: a circle with a start and end angle. */
+  arc: {
+    label: 'Arc',
+    create: ({ centre, radius, startAngle = 0, endAngle = Math.PI }) => ({
+      centre,
+      radius,
+      startAngle,
+      endAngle,
+    }),
+    quantities: (node) =>
+      node.radius > 0
+        ? [
+            {
+              sku: 'CURVE',
+              description: 'Curved rail',
+              unit: 'in',
+              quantity: arcLength(node.radius, node.startAngle, node.endAngle),
+            },
+          ]
+        : [],
+    editable: [{ key: 'radius', label: 'Radius', min: 0.25, max: 6000 }],
+    pushPull: 'radius',
   },
 
   /** A text note, optionally with a leader pointing at something. */
@@ -411,6 +459,25 @@ export function listSegments(doc) {
       continue
     }
 
+    // Curves contribute their tessellation, so the cursor can land ON a curve
+    // the same way it lands on a line.
+    const curve = curveOutline(node)
+    if (curve) {
+      // Tagged as curve chords so inference offers only "on curve" for them.
+      // A tessellation vertex is an artefact of how finely we happened to
+      // subdivide, not a feature of the drawing — without this, one circle
+      // litters the model with seventy meaningless endpoint snaps.
+      for (let i = 0; i < curve.points.length - (curve.closed ? 0 : 1); i++) {
+        segments.push({
+          id: node.id,
+          start: curve.points[i],
+          end: curve.points[(i + 1) % curve.points.length],
+          curve: true,
+        })
+      }
+      continue
+    }
+
     if (node.points?.length >= 2) {
       for (const [start, end] of railingSegments(node)) {
         segments.push({ id: node.id, start, end })
@@ -421,6 +488,59 @@ export function listSegments(doc) {
   }
 
   return segments
+}
+
+/** The tessellated outline of a curve node, or null for anything else. */
+export function curveOutline(node) {
+  if (node.type === 'circle' && node.radius > 0) {
+    return { points: circlePoints(node.centre, node.radius), closed: true }
+  }
+  if (node.type === 'arc' && node.radius > 0) {
+    return {
+      points: arcPoints(node.centre, node.radius, node.startAngle, node.endAngle),
+      closed: false,
+    }
+  }
+  return null
+}
+
+/**
+ * Snap points that are not vertices — a circle's centre and its quadrants.
+ *
+ * These are the points a drafter reaches for constantly and that no amount of
+ * tessellation would ever produce, since the centre is not on the curve at all.
+ */
+export function listSnapPoints(doc) {
+  const points = []
+
+  for (const node of listNodes(doc)) {
+    if (!isSelectable(doc, node)) continue
+    if (node.type !== 'circle' && node.type !== 'arc') continue
+    if (!(node.radius > 0)) continue
+
+    points.push({ kind: 'centre', point: node.centre, refs: [node.id] })
+
+    for (const quadrant of quadrantPoints(node.centre, node.radius)) {
+      points.push({ kind: 'quadrant', point: quadrant, refs: [node.id] })
+    }
+
+    // An arc's two ends ARE genuine endpoints — unlike the tessellation
+    // vertices between them, which are an artefact of subdivision.
+    if (node.type === 'arc') {
+      points.push({
+        kind: 'endpoint',
+        point: pointOnCircle(node.centre, node.radius, node.startAngle),
+        refs: [node.id],
+      })
+      points.push({
+        kind: 'endpoint',
+        point: pointOnCircle(node.centre, node.radius, node.endAngle),
+        refs: [node.id],
+      })
+    }
+  }
+
+  return points
 }
 
 /** The current document schema. Bump when a load-time migration is needed. */

@@ -21,7 +21,9 @@
 /** Snap kinds, ordered — lower `priority` wins. Colours follow CAD convention. */
 export const SNAP_KINDS = {
   endpoint: { priority: 0, color: '#22c55e', label: 'Endpoint' },
+  centre: { priority: 1, color: '#06b6d4', label: 'Centre' },
   midpoint: { priority: 1, color: '#06b6d4', label: 'Midpoint' },
+  quadrant: { priority: 2, color: '#a855f7', label: 'Quadrant' },
   intersection: { priority: 2, color: '#f59e0b', label: 'Intersection' },
   onEdge: { priority: 3, color: '#ef4444', label: 'On edge' },
   axisX: { priority: 4, color: '#ef4444', label: 'On red axis' },
@@ -121,6 +123,12 @@ function segmentIntersection(a1, a2, b1, b2) {
 export function infer({
   cursor,
   segments = [],
+  /**
+   * Snap targets that are not derived from segments — a circle's centre, its
+   * quadrants. Each declares its own kind, so priority is decided here rather
+   * than by whoever supplied it.
+   */
+  extraPoints = [],
   anchor = null,
   worldPerPixel,
   pixelTolerance = 10,
@@ -150,15 +158,25 @@ export function infer({
     }
   }
 
+  // Supplied targets first — a circle's centre is not on any segment, so
+  // nothing below would ever produce it.
+  for (const extra of extraPoints) {
+    consider(extra.kind, extra.point, extra.refs ?? [])
+  }
+
   // --- Geometry-derived candidates -------------------------------------------
   // One projection per segment, reused for the on-edge test, the extension
   // test, and the nearby-set used for intersections below.
   const nearby = []
 
   for (const segment of segments) {
-    consider('endpoint', segment.start, [segment.id])
-    consider('endpoint', segment.end, [segment.id])
-    consider('midpoint', midpoint(segment.start, segment.end), [segment.id])
+    // A chord of a tessellated curve has no meaningful ends or middle — those
+    // are artefacts of the subdivision. Only its position on the curve counts.
+    if (!segment.curve) {
+      consider('endpoint', segment.start, [segment.id])
+      consider('endpoint', segment.end, [segment.id])
+      consider('midpoint', midpoint(segment.start, segment.end), [segment.id])
+    }
 
     const projection = projectOnSegment(cursor, segment.start, segment.end)
 
@@ -191,6 +209,11 @@ export function infer({
   // spatial index.
   for (let i = 0; i < nearby.length; i++) {
     for (let j = i + 1; j < nearby.length; j++) {
+      // Two spans of the SAME object are not an intersection. Where they meet
+      // is a corner — or, on a tessellated curve, an arbitrary subdivision
+      // point — and calling it a crossing outranks the answer the user wants.
+      if (nearby[i].id === nearby[j].id) continue
+
       const crossing = segmentIntersection(nearby[i].start, nearby[i].end, nearby[j].start, nearby[j].end)
       if (crossing) consider('intersection', crossing, [nearby[i].id, nearby[j].id])
     }

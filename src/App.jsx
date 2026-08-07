@@ -48,6 +48,8 @@ export default function App() {
             ['pushpull', 'Push/Pull'],
             ['rectangle', 'Rect'],
             ['polygon', 'Polygon'],
+            ['circle', 'Circle'],
+            ['arc', 'Arc'],
             ['dimension', 'Dimension'],
             ['note', 'Note'],
           ].map(([mode, label]) => (
@@ -129,6 +131,8 @@ export default function App() {
             {tool === 'rectangle' &&
               'Click two corners · or type a size like 120,96 or 10′,8′ and press Enter'}
             {tool === 'polygon' && 'Click the centre, then a corner · sides set on the right'}
+            {tool === 'circle' && 'Click the centre, then a point on the rim'}
+            {tool === 'arc' && 'Click both ends, then a point the arc passes through'}
           </span>
         </div>
       </header>
