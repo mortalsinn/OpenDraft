@@ -133,6 +133,56 @@ export function stairIssues(node) {
 }
 
 /**
+ * The lines a stair contributes to a PLAN drawing.
+ *
+ * A stair in plan is its tread nosings and the two sides of the flight — not
+ * the single line that describes where it runs. Drawing only that line is how
+ * you hand a fabricator a sheet with a stair on it that cannot be counted.
+ *
+ * @returns {[{x,y,z},{x,y,z}][]} pairs of endpoints, in world space
+ */
+export function stairPlanLines(node) {
+  const points = node.points ?? []
+  if (points.length < 2) return []
+
+  const [from, to] = points
+  const dx = to.x - from.x
+  const dy = to.y - from.y
+  const length = Math.hypot(dx, dy)
+  if (length === 0) return []
+
+  const ux = dx / length
+  const uy = dy / length
+  // Perpendicular, for the width of the flight.
+  const px = -uy
+  const py = ux
+
+  const { steps, width, totalRun } = layoutStair(node)
+  if (!steps.length) return []
+
+  const half = width / 2
+  const at = (along, across) => ({
+    x: from.x + ux * along + px * across,
+    y: from.y + uy * along + py * across,
+    z: from.z ?? 0,
+  })
+
+  const lines = []
+
+  // Both sides of the flight.
+  lines.push([at(0, half), at(totalRun, half)])
+  lines.push([at(0, -half), at(totalRun, -half)])
+
+  // A nosing line at every step, which is what makes treads countable.
+  for (const step of steps) {
+    if (step.offset > totalRun + 1e-9) continue
+    lines.push([at(step.offset, half), at(step.offset, -half)])
+  }
+
+  return lines
+}
+
+/**
  * Takeoff for a stair. Reads `layoutStair`, so the count of treads quoted is
  * exactly the count of treads drawn.
  */

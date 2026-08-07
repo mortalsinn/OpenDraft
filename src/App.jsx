@@ -2,6 +2,7 @@ import Viewport from './scene/Viewport.jsx'
 import ValueBox from './ui/ValueBox.jsx'
 import TakeoffPanel from './ui/TakeoffPanel.jsx'
 import Inspector from './ui/Inspector.jsx'
+import ExportMenu from './ui/ExportMenu.jsx'
 import { useDraft } from './store/useDraft.js'
 
 const SEGMENTED = 'px-3 py-1 text-xs font-medium transition'
@@ -16,6 +17,8 @@ export default function App() {
   const undo = useDraft((s) => s.undo)
   const past = useDraft((s) => s.past)
   const newDocument = useDraft((s) => s.newDocument)
+  const projectName = useDraft((s) => s.projectName)
+  const setProjectName = useDraft((s) => s.setProjectName)
 
   return (
     <div className="flex h-screen w-screen flex-col bg-slate-950 text-slate-100">
@@ -23,6 +26,14 @@ export default function App() {
         <span className="font-semibold tracking-tight">
           Open<span className="text-amber-400">Draft</span>
         </span>
+
+        <input
+          value={projectName}
+          onChange={(event) => setProjectName(event.target.value)}
+          onKeyDown={(event) => event.stopPropagation()}
+          placeholder="Project name"
+          className="w-44 rounded bg-slate-900 px-2 py-1 text-xs text-slate-200 outline-none ring-1 ring-white/10 focus:ring-amber-500"
+        />
 
         <div className="flex overflow-hidden rounded-md ring-1 ring-white/10">
           {[
@@ -112,6 +123,7 @@ export default function App() {
         <aside className="flex w-72 shrink-0 flex-col overflow-y-auto border-l border-white/10 bg-slate-900/60">
           <Inspector />
           <TakeoffPanel />
+          <ExportMenu />
         </aside>
       </div>
     </div>

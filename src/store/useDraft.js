@@ -46,6 +46,9 @@ export const useDraft = create((set, get) => ({
   typed: '',
   view: 'plan',
   gridStep: 12,
+  projectName: 'Untitled',
+
+  setProjectName: (projectName) => set({ projectName }),
 
   setTool: (tool) => set({ tool, anchor: null, pendingAnchor: null, typed: '', lockedAxis: null }),
   select: (selection) => set({ selection }),
