@@ -77,7 +77,8 @@ export default function ValueBox() {
       }
 
       // Anything that could be part of a length goes into the box.
-      if (/^[0-9./'"\- ]$/.test(event.key)) {
+      // Comma included so a shape can take a size pair: `120,96`.
+      if (/^[0-9./'",\- ]$/.test(event.key)) {
         setTyped(useDraft.getState().typed + event.key)
       }
     }

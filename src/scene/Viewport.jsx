@@ -9,6 +9,7 @@ import { distance, listSegments } from '../core/doc.js'
 import { railingSegments } from '../core/railing.js'
 import { isVisible } from '../core/layers.js'
 import { instantiate } from '../core/components.js'
+import { SHAPE_TOOLS } from '../core/shapes.js'
 import Railing from './Railing.jsx'
 import Slab from './Slab.jsx'
 import Stair from './Stair.jsx'
@@ -304,6 +305,36 @@ function Geometry() {
   ))
 }
 
+/**
+ * The shape being dragged out right now.
+ *
+ * Resolved through the same table the commit uses, so what you see while
+ * dragging is exactly what lands — a preview computed a second way is a
+ * preview that eventually lies.
+ */
+function ShapePreview() {
+  const tool = useDraft((s) => s.tool)
+  const shapeBase = useDraft((s) => s.shapeBase)
+  const snap = useDraft((s) => s.snap)
+  const sides = useDraft((s) => s.polygonSides)
+
+  if (!shapeBase || !snap || !SHAPE_TOOLS[tool]) return null
+
+  const points = SHAPE_TOOLS[tool](shapeBase, snap.point, sides)
+  if (points.length < 3) return null
+
+  return (
+    <Line
+      points={[...points, points[0]].map((p) => [p.x, p.y, p.z ?? 0])}
+      color={snap.color}
+      lineWidth={2}
+      dashed
+      dashSize={4}
+      gapSize={3}
+    />
+  )
+}
+
 /** The line being drawn right now, from the anchor to the inferred point. */
 function RubberBand() {
   const anchor = useDraft((s) => s.anchor)
@@ -408,6 +439,7 @@ export default function Viewport() {
         <SizeGuard />
         <Geometry />
         <RubberBand />
+        <ShapePreview />
         <PointerBridge />
         <OrbitControls
           makeDefault

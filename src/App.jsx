@@ -22,6 +22,8 @@ export default function App() {
   const newDocument = useDraft((s) => s.newDocument)
   const projectName = useDraft((s) => s.projectName)
   const setProjectName = useDraft((s) => s.setProjectName)
+  const polygonSides = useDraft((s) => s.polygonSides)
+  const setPolygonSides = useDraft((s) => s.setPolygonSides)
 
   return (
     <div className="flex h-screen w-screen flex-col bg-slate-950 text-slate-100">
@@ -44,6 +46,8 @@ export default function App() {
             ['select', 'Select'],
             ['move', 'Move'],
             ['pushpull', 'Push/Pull'],
+            ['rectangle', 'Rect'],
+            ['polygon', 'Polygon'],
             ['dimension', 'Dimension'],
             ['note', 'Note'],
           ].map(([mode, label]) => (
@@ -72,6 +76,21 @@ export default function App() {
             </button>
           ))}
         </div>
+
+        {tool === 'polygon' && (
+          <label className="flex items-center gap-1.5 text-xs text-slate-400">
+            Sides
+            <input
+              type="number"
+              min={3}
+              max={64}
+              value={polygonSides}
+              onChange={(event) => setPolygonSides(Number(event.target.value))}
+              onKeyDown={(event) => event.stopPropagation()}
+              className="w-14 rounded bg-slate-900 px-1.5 py-1 text-slate-200 outline-none ring-1 ring-white/10 focus:ring-amber-500"
+            />
+          </label>
+        )}
 
         <button
           onClick={undo}
@@ -107,6 +126,9 @@ export default function App() {
             {tool === 'dimension' &&
               'Click two points · snapping to a corner binds the dimension so it follows the geometry'}
             {tool === 'note' && 'Click to drop a note, then edit its text on the right'}
+            {tool === 'rectangle' &&
+              'Click two corners · or type a size like 120,96 or 10′,8′ and press Enter'}
+            {tool === 'polygon' && 'Click the centre, then a corner · sides set on the right'}
           </span>
         </div>
       </header>

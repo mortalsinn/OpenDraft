@@ -263,6 +263,30 @@ export function convertNode(doc, id, type) {
 }
 
 /**
+ * Add a ring or path of points as chained edges.
+ *
+ * Shapes commit through here rather than as a bespoke node type, so a drawn
+ * rectangle is instantly a closed chain: promotable to a deck or railing run,
+ * with corners the chain walker already understands.
+ */
+export function addChainedEdges(doc, points, { closed = true, layer } = {}) {
+  if (points.length < 2) return doc
+
+  let next = doc
+  const last = closed ? points.length : points.length - 1
+
+  for (let i = 0; i < last; i++) {
+    next = addNode(next, 'edge', {
+      start: points[i],
+      end: points[(i + 1) % points.length],
+      layer,
+    })
+  }
+
+  return next
+}
+
+/**
  * Promote an edge — and the whole chain of edges connected to it — into a
  * single railing run.
  *

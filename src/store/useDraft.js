@@ -14,8 +14,10 @@ import {
   listSegments,
   makeComponent,
   placeInstance,
+  addChainedEdges,
   NODE_TYPES,
 } from '../core/doc.js'
+import { SHAPE_TOOLS, parsePair } from '../core/shapes.js'
 import { parseLength, snapToFraction } from '../core/units.js'
 import { saveDocument, loadDocument, clearDocument } from '../core/persist.js'
 import { makeAnchor } from '../core/dimension.js'
@@ -47,6 +49,10 @@ export const useDraft = create((set, get) => ({
   anchor: null,
   /** First end of a dimension being placed. */
   pendingAnchor: null,
+  /** Base point of a shape being drawn — first corner, or centre. */
+  shapeBase: null,
+  polygonSides: 6,
+  setPolygonSides: (polygonSides) => set({ polygonSides: Math.max(3, Math.round(polygonSides)) }),
   /** Latest inference result, written every pointer move by the viewport. */
   snap: null,
   /** 'axisX' | 'axisY' | 'axisZ' | null — set by arrow keys. */
@@ -114,7 +120,8 @@ export const useDraft = create((set, get) => ({
     commit(assignLayer(doc, selection, layerId))
   },
 
-  setTool: (tool) => set({ tool, anchor: null, pendingAnchor: null, typed: '', lockedAxis: null }),
+  setTool: (tool) =>
+    set({ tool, anchor: null, pendingAnchor: null, shapeBase: null, typed: '', lockedAxis: null }),
   select: (selection) => set({ selection }),
   setView: (view) => set({ view }),
   setSnap: (snap) => set({ snap }),
@@ -341,6 +348,22 @@ export const useDraft = create((set, get) => ({
       return
     }
 
+    // Two-click shapes: the first click parks a base point, the second
+    // resolves the shape and commits it as chained edges.
+    if (SHAPE_TOOLS[tool]) {
+      const { shapeBase, polygonSides, layer } = { ...get(), layer: get().activeLayer }
+
+      if (!shapeBase) {
+        set({ shapeBase: point, typed: '' })
+        return
+      }
+
+      const points = SHAPE_TOOLS[tool](shapeBase, point, polygonSides)
+      if (points.length >= 3) commit(addChainedEdges(doc, points, { layer }))
+      set({ shapeBase: null, typed: '' })
+      return
+    }
+
     if (tool === 'component') {
       const { pendingDefinition } = get()
       if (pendingDefinition) commit(placeInstance(doc, pendingDefinition, point))
@@ -376,8 +399,24 @@ export const useDraft = create((set, get) => ({
    * precise: you aim roughly, then state the number.
    */
   commitTyped: () => {
-    const { anchor, snap, typed, doc, commit, pushPull, selection, tool } = get()
+    const { anchor, snap, typed, doc, commit, pushPull, selection, tool, shapeBase } = get()
     if (!typed.trim()) return
+
+    // A shape with a base point down takes a size pair: `120,96` or `10',8'`.
+    if (shapeBase && SHAPE_TOOLS[tool]) {
+      const size = parsePair(typed, parseLength)
+      if (!size) {
+        set({ typed: '' })
+        return
+      }
+
+      const opposite = { x: shapeBase.x + size.x, y: shapeBase.y + size.y, z: shapeBase.z ?? 0 }
+      const points = SHAPE_TOOLS[tool](shapeBase, opposite, get().polygonSides)
+      if (points.length >= 3) commit(addChainedEdges(doc, points, { layer: get().activeLayer }))
+
+      set({ shapeBase: null, typed: '' })
+      return
+    }
 
     // During a push/pull — or with something selected and the tool active —
     // a typed number sets the parameter exactly. Dragging gets you close at
@@ -432,7 +471,8 @@ export const useDraft = create((set, get) => ({
   },
 
   /** Escape: abandon the in-progress line without touching the document. */
-  cancel: () => set({ anchor: null, pendingAnchor: null, typed: '', lockedAxis: null }),
+  cancel: () =>
+    set({ anchor: null, pendingAnchor: null, shapeBase: null, typed: '', lockedAxis: null }),
 
   /** Change a note's text. */
   setNoteText: (id, text) => {
