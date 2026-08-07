@@ -11,6 +11,8 @@ import { PdfPage, buildPdf, POINTS_PER_INCH, PAGE_SIZES } from './pdf.js'
 import { listSegments, listNodes, computeTakeoff, documentIssues } from './doc.js'
 import { resolveDimension } from './dimension.js'
 import { stairPlanLines } from './stairs.js'
+import { hatchRegion, lineweightInches } from './hatch.js'
+import { layerOf } from './layers.js'
 import { formatLength } from './units.js'
 
 /**
@@ -140,12 +142,31 @@ export function renderPlan(doc, options = {}) {
   page.rect(MARGIN / 2, MARGIN / 2, sheet.width - MARGIN, sheet.height - MARGIN)
   page.line(MARGIN / 2, MARGIN / 2 + TITLE_BLOCK_HEIGHT, sheet.width - MARGIN / 2, MARGIN / 2 + TITLE_BLOCK_HEIGHT)
 
+  // Hatch first, so geometry lines sit on top of it rather than under.
+  page.setLineWidth(0.4).setStroke(0.45, 0.45, 0.45)
+  for (const node of listNodes(doc)) {
+    if (node.type !== 'slab' || !node.hatch || node.hatch === 'none') continue
+
+    for (const [from, to] of hatchRegion(node.points, node.hatch, {
+      scale: node.hatchScale ?? 1,
+      angleOffset: node.hatchAngle ?? 0,
+    })) {
+      const [x1, y1] = toPage(from)
+      const [x2, y2] = toPage(to)
+      page.line(x1, y1, x2, y2)
+    }
+  }
+
   // Geometry.
   page.setLineWidth(1).setStroke(0, 0, 0)
   for (const segment of listSegments(doc)) {
     // A stair's two points describe where it runs, not what it looks like;
     // its real plan representation is drawn below.
     if (doc.nodes[segment.id]?.type === 'stairRun') continue
+
+    // Lineweight comes from the layer, in inches of ink converted to points.
+    const layer = layerOf(doc, doc.nodes[segment.id])
+    page.setLineWidth(lineweightInches(layer?.lineweight) * POINTS_PER_INCH)
 
     const [x1, y1] = toPage(segment.start)
     const [x2, y2] = toPage(segment.end)

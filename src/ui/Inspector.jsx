@@ -6,6 +6,7 @@ import { buildChain } from '../core/chain.js'
 import { polygonAreaSquareFeet, polygonPerimeter } from '../core/polygon.js'
 import { resolveDimension, isAssociative } from '../core/dimension.js'
 import { getRules } from '../core/code.js'
+import { HATCH_LIST } from '../core/hatch.js'
 import { formatLength, parseLength } from '../core/units.js'
 
 /**
@@ -101,11 +102,29 @@ export default function Inspector() {
       )}
 
       {slab && (
-        <div className="mb-3 rounded bg-white/5 px-2 py-1.5 text-xs">
-          <Readout label="Area" value={`${polygonAreaSquareFeet(node.points).toFixed(1)} sq ft`} />
-          <Readout label="Perimeter" value={formatLength(polygonPerimeter(node.points))} />
-          <Readout label="Corners" value={node.points.length} />
-        </div>
+        <>
+          <div className="mb-2 rounded bg-white/5 px-2 py-1.5 text-xs">
+            <Readout label="Area" value={`${polygonAreaSquareFeet(node.points).toFixed(1)} sq ft`} />
+            <Readout label="Perimeter" value={formatLength(polygonPerimeter(node.points))} />
+            <Readout label="Corners" value={node.points.length} />
+          </div>
+
+          <label className="mb-2 flex items-center justify-between gap-2 text-xs">
+            <span className="text-slate-400">Hatch</span>
+            <select
+              value={node.hatch ?? 'none'}
+              onChange={(event) => edit('hatch', event.target.value)}
+              onKeyDown={(event) => event.stopPropagation()}
+              className="w-32 rounded bg-slate-800 px-1.5 py-1 text-slate-100 outline-none ring-1 ring-white/10 focus:ring-amber-500"
+            >
+              {HATCH_LIST.map((pattern) => (
+                <option key={pattern.id} value={pattern.id}>
+                  {pattern.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        </>
       )}
 
       {layout && (

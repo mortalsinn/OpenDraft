@@ -22,6 +22,10 @@ export function createLayer(id, name, overrides = {}) {
     locked: false,
     includeInTakeoff: true,
     color: null, // null means "use the object's own colour"
+    // Lineweight is what separates a drawing that reads at a glance from a
+    // flat wireframe: cut edges heavy, visible medium, annotation light.
+    lineweight: 'medium',
+    linetype: 'solid',
     ...overrides,
   }
 }

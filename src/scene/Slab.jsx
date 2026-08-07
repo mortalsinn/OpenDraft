@@ -2,6 +2,7 @@ import { useMemo } from 'react'
 import * as THREE from 'three'
 import { Line } from '@react-three/drei'
 import { isCounterClockwise } from '../core/polygon.js'
+import { hatchRegion } from '../core/hatch.js'
 
 /**
  * A horizontal face extruded to its thickness.
@@ -29,6 +30,15 @@ export default function Slab({ node, selected }) {
     })
   }, [node.points, node.thickness])
 
+  const hatch = useMemo(
+    () =>
+      hatchRegion(node.points ?? [], node.hatch ?? 'none', {
+        scale: node.hatchScale ?? 1,
+        angleOffset: node.hatchAngle ?? 0,
+      }),
+    [node.points, node.hatch, node.hatchScale, node.hatchAngle],
+  )
+
   if (!geometry) return null
 
   const elevation = node.elevation ?? 0
@@ -52,6 +62,23 @@ export default function Slab({ node, selected }) {
         color={selected ? '#fbbf24' : '#a8a29e'}
         lineWidth={selected ? 3 : 1.5}
       />
+
+      {/* Hatch, drawn on the top face so it reads in plan. Generated as real
+          segments rather than a texture, so it survives export to vector PDF
+          at any scale. */}
+      {hatch.map(([from, to], i) => (
+        <Line
+          key={i}
+          points={[
+            [from.x, from.y, node.thickness ?? 5.5],
+            [to.x, to.y, node.thickness ?? 5.5],
+          ]}
+          color={selected ? '#fbbf24' : '#a8a29e'}
+          lineWidth={0.75}
+          transparent
+          opacity={0.6}
+        />
+      ))}
     </group>
   )
 }

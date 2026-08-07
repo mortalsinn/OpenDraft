@@ -527,7 +527,9 @@ export const useDraft = create((set, get) => ({
     const { doc, commit } = get()
     const id = get().primary()
     if (!id || !doc.nodes[id]) return
-    if (!Number.isFinite(value)) return
+    // Numbers must be real — a NaN from a failed parse would silently corrupt
+    // the geometry. Strings (a hatch pattern, a style) pass straight through.
+    if (typeof value === 'number' && !Number.isFinite(value)) return
     commit(updateNode(doc, id, { [key]: value }))
   },
 

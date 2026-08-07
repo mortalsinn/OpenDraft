@@ -114,12 +114,26 @@ export const NODE_TYPES = {
    */
   slab: {
     label: 'Slab',
-    create: ({ points, start, end, thickness = 5.5, elevation = 0, boardWidth = 5.5, ...overrides }) => ({
+    create: ({
+      points,
+      start,
+      end,
+      thickness = 5.5,
+      elevation = 0,
+      boardWidth = 5.5,
+      hatch = 'boards',
+      hatchScale = 1,
+      hatchAngle = 0,
+      ...overrides
+    }) => ({
       points: points ?? (start && end ? [start, end] : []),
       closed: true, // a face is a ring by definition
       thickness,
       elevation,
       boardWidth,
+      hatch,
+      hatchScale,
+      hatchAngle,
       ...overrides,
     }),
     quantities: (node) => {
