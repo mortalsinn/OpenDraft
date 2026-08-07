@@ -11,15 +11,11 @@ import BlocksPanel from './ui/BlocksPanel.jsx'
 import PrecisionBar from './ui/PrecisionBar.jsx'
 import SheetsPanel from './ui/SheetsPanel.jsx'
 import LibraryPanel from './ui/LibraryPanel.jsx'
+import ToolRail from './ui/ToolRail.jsx'
 import { useDraft } from './store/useDraft.js'
 
-const SEGMENTED = 'px-3 py-1 text-xs font-medium transition'
-
 export default function App() {
-  const view = useDraft((s) => s.view)
-  const setView = useDraft((s) => s.setView)
   const tool = useDraft((s) => s.tool)
-  const setTool = useDraft((s) => s.setTool)
   const snap = useDraft((s) => s.snap)
   const lockedAxis = useDraft((s) => s.lockedAxis)
   const selectionCount = useDraft((s) => s.selection.length)
@@ -47,50 +43,6 @@ export default function App() {
           placeholder="Project name"
           className="w-44 rounded bg-slate-900 px-2 py-1 text-xs text-slate-200 outline-none ring-1 ring-white/10 focus:ring-amber-500"
         />
-
-        <div className="flex overflow-hidden rounded-md ring-1 ring-white/10">
-          {[
-            ['line', 'Line'],
-            ['select', 'Select'],
-            ['move', 'Move'],
-            ['pushpull', 'Push/Pull'],
-            ['rectangle', 'Rect'],
-            ['polygon', 'Polygon'],
-            ['circle', 'Circle'],
-            ['arc', 'Arc'],
-            ['trim', 'Trim'],
-            ['extend', 'Extend'],
-            ['fillet', 'Fillet'],
-            ['chamfer', 'Chamfer'],
-            ['dimension', 'Dimension'],
-            ['note', 'Note'],
-            ['block', 'Block'],
-          ].map(([mode, label]) => (
-            <button
-              key={mode}
-              onClick={() => setTool(mode)}
-              className={`${SEGMENTED} ${
-                tool === mode ? 'bg-sky-500 text-slate-950' : 'text-slate-400 hover:text-slate-100'
-              }`}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-
-        <div className="flex overflow-hidden rounded-md ring-1 ring-white/10">
-          {['plan', '3d'].map((mode) => (
-            <button
-              key={mode}
-              onClick={() => setView(mode)}
-              className={`${SEGMENTED} ${
-                view === mode ? 'bg-amber-500 text-slate-950' : 'text-slate-400 hover:text-slate-100'
-              }`}
-            >
-              {mode === 'plan' ? 'Plan' : '3D'}
-            </button>
-          ))}
-        </div>
 
         {(tool === 'fillet' || tool === 'chamfer') && (
           <label className="flex items-center gap-1.5 text-xs text-slate-400">
@@ -176,6 +128,7 @@ export default function App() {
       </header>
 
       <div className="relative flex flex-1 overflow-hidden">
+        <ToolRail />
         <main className="relative flex-1">
           <Viewport />
           <ValueBox />

@@ -49,6 +49,7 @@ import {
   fromFile,
 } from '../core/library.js'
 import { documentBounds } from '../core/plan.js'
+import { toolAfterViewChange } from '../core/tools.js'
 import { isSelectable } from '../core/layers.js'
 import {
   DEFAULT_LAYER_ID,
@@ -520,7 +521,31 @@ export const useDraft = create((set, get) => ({
     }
     return null
   },
-  setView: (view) => set({ view }),
+  /**
+   * Switch between plan and 3D.
+   *
+   * The held tool carries over when the new view offers it, so nipping into 3D
+   * to check something and coming back does not cost you your place. Anything
+   * the new view has no tool for falls back to Select rather than staying
+   * armed and silently doing nothing.
+   */
+  setView: (view) =>
+    set((state) => ({
+      view,
+      tool: toolAfterViewChange(state.tool, view),
+      anchor: null,
+      shapeBase: null,
+      arcSecond: null,
+      editFirst: null,
+      typed: '',
+    })),
+
+  /**
+   * Ask the viewport to frame the drawing. A counter rather than a flag,
+   * because two fits in a row must both be honoured.
+   */
+  fitRequest: 0,
+  fitView: () => set((state) => ({ fitRequest: state.fitRequest + 1 })),
   setSnap: (snap) => set({ snap }),
   setTyped: (typed) => set({ typed }),
   setLockedAxis: (lockedAxis) => set({ lockedAxis }),

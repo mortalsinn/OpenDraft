@@ -6,6 +6,7 @@ import { useDraft } from '../store/useDraft.js'
 import { infer } from '../core/inference.js'
 import { formatLength } from '../core/units.js'
 import { distance, listSegments, listSnapPoints, curveOutline } from '../core/doc.js'
+import { documentBounds } from '../core/plan.js'
 import { railingSegments } from '../core/railing.js'
 import { isVisible } from '../core/layers.js'
 import { instantiate } from '../core/components.js'
@@ -29,10 +30,14 @@ const DRAWING_PLANE = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0)
  * Keeps the drawing buffer matched to the canvas's CSS size.
  *
  * R3F sizes itself from a ResizeObserver, which is not reliable everywhere —
- * some embedded and headless browsers never deliver the initial callback, and
- * the canvas is then stuck at its intrinsic 300x150 while the page around it
- * looks fine. Comparing sizes each frame and correcting only on a genuine
- * mismatch costs nothing and removes the dependency.
+ * some embedded browsers never deliver the initial callback, and the canvas is
+ * then stuck at its intrinsic 300x150 while the page around it looks fine.
+ * Comparing sizes each frame and correcting only on a genuine mismatch costs
+ * nothing.
+ *
+ * This is a SECOND line of defence, not the only one: useFrame is driven by
+ * requestAnimationFrame, which a backgrounded tab never gets, so this cannot
+ * run when the page is hidden. The resize nudge in Viewport covers that case.
  */
 function SizeGuard() {
   const { gl, camera, size, setSize } = useThree()
@@ -56,6 +61,72 @@ function SizeGuard() {
     }
     camera.updateProjectionMatrix()
   })
+
+  return null
+}
+
+/**
+ * Frames the drawing when asked.
+ *
+ * Watches a counter rather than a flag so two fits in a row are both honoured,
+ * and leaves a margin so the outermost geometry is not pressed against the
+ * edge of the window.
+ */
+function FitHandler() {
+  const { camera, size, invalidate } = useThree()
+  const controls = useThree((state) => state.controls)
+
+  // A handle on the camera from the console during development. The canvas is
+  // otherwise opaque from outside, which makes any camera bug a guessing game.
+  if (import.meta.env?.DEV && typeof window !== 'undefined') {
+    window.__scene = { camera, controls }
+  }
+
+  const fitRequest = useDraft((s) => s.fitRequest)
+  const doc = useDraft((s) => s.doc)
+  const handled = useRef(0)
+
+  // Driven by an effect, not the frame loop. useFrame only runs while the
+  // page is actually animating — a backgrounded tab gets no requestAnimationFrame
+  // at all — and framing the drawing has to work the moment it is asked for.
+  //
+  // `controls` is a dependency because OrbitControls registers itself after
+  // mount: moving the camera before it exists leaves its stale target to drag
+  // the view back, so the effect re-runs once it appears.
+  useEffect(() => {
+    if (fitRequest === handled.current) return
+    if (!controls) return // it will re-run when controls register
+    handled.current = fitRequest
+
+    const bounds = documentBounds(doc)
+    if (!bounds) return
+
+    const centre = {
+      x: (bounds.minX + bounds.maxX) / 2,
+      y: (bounds.minY + bounds.maxY) / 2,
+    }
+    // A tenth of the extent as breathing room on each side.
+    const width = Math.max(bounds.width, 1) * 1.2
+    const height = Math.max(bounds.height, 1) * 1.2
+
+    if (camera.isOrthographicCamera) {
+      camera.zoom = Math.min(size.width / width, size.height / height)
+      camera.position.set(centre.x, centre.y, camera.position.z)
+    } else {
+      // Pull back far enough that the whole extent fits the narrower field.
+      const distance = Math.max(width, height) / (2 * Math.tan((camera.fov * Math.PI) / 360))
+      camera.position.set(centre.x + distance * 0.6, centre.y - distance * 0.7, distance * 0.6)
+    }
+
+    camera.updateProjectionMatrix()
+
+    // Target first, then let the controls settle the camera against it.
+    controls.target.set(centre.x, centre.y, 0)
+    controls.update()
+
+    // Nothing redraws on its own when the frame loop is idle, so ask for one.
+    invalidate()
+  }, [fitRequest, doc, camera, size, controls, invalidate])
 
   return null
 }
@@ -535,6 +606,7 @@ export default function Viewport() {
         <Grid />
         <Axes />
         <SizeGuard />
+        <FitHandler />
         <Geometry />
         <RubberBand />
         <ShapePreview />
