@@ -279,6 +279,47 @@ export function removeNode(doc, id) {
   return { ...doc, nodes, order: doc.order.filter((n) => n !== id) }
 }
 
+/** The movable vertices of a node, whatever shape it stores them in. */
+export function nodeVertices(node) {
+  if (!node) return []
+  if (Array.isArray(node.points)) return node.points
+  if (node.start && node.end) return [node.start, node.end]
+  if (node.position) return [node.position]
+  return []
+}
+
+/** Write vertices back in whatever shape the node uses. */
+function withVertices(node, vertices) {
+  if (Array.isArray(node.points)) return { ...node, points: vertices }
+  if (node.start && node.end) return { ...node, start: vertices[0], end: vertices[1] }
+  if (node.position) return { ...node, position: vertices[0] }
+  return node
+}
+
+/** Move one vertex of a node to an absolute position. */
+export function moveVertex(doc, id, index, point) {
+  const node = doc.nodes[id]
+  const vertices = nodeVertices(node)
+  if (!vertices[index]) return doc
+
+  const moved = vertices.map((vertex, i) => (i === index ? { ...point } : vertex))
+  return { ...doc, nodes: { ...doc.nodes, [id]: withVertices(node, moved) } }
+}
+
+/** Shift every vertex of a node by a displacement. */
+export function translateNode(doc, id, delta) {
+  const node = doc.nodes[id]
+  const vertices = nodeVertices(node)
+  if (!vertices.length) return doc
+
+  const moved = vertices.map((vertex) => ({
+    x: vertex.x + delta.x,
+    y: vertex.y + delta.y,
+    z: (vertex.z ?? 0) + (delta.z ?? 0),
+  }))
+  return { ...doc, nodes: { ...doc.nodes, [id]: withVertices(node, moved) } }
+}
+
 /** Ids of the dimensions that measure `id`. */
 export function dependentsOf(doc, id) {
   return listNodes(doc)

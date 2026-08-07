@@ -7,6 +7,9 @@ import {
   promoteChain,
   removeNode,
   removeNodeCascade,
+  nodeVertices,
+  moveVertex,
+  translateNode,
   computeTakeoff,
   listSegments,
   NODE_TYPES,
@@ -122,6 +125,73 @@ export const useDraft = create((set, get) => ({
     // Rewind the live preview and commit the net change as one history entry.
     saveDocument(doc)
     set({ past: [...past, updateNode(doc, pushPull.id, { [pushPull.key]: pushPull.startValue })], future: [] })
+  },
+
+  /**
+   * Move state. Holds the document as it was when the drag started, so every
+   * frame resolves against the original rather than compounding.
+   */
+  moving: null,
+
+  /**
+   * Begin a move. Grabbing within snapping distance of a vertex moves just
+   * that vertex; grabbing anywhere else on the object moves the whole thing.
+   */
+  beginMove: (worldPoint, snapRefs = []) => {
+    const { doc } = get()
+    const id = snapRefs[0]
+    const node = id && doc.nodes[id]
+    if (!node) return
+
+    const vertices = nodeVertices(node)
+    let index = null
+    let nearest = Infinity
+
+    vertices.forEach((vertex, i) => {
+      const d = Math.hypot(vertex.x - worldPoint.x, vertex.y - worldPoint.y)
+      if (d < nearest) {
+        nearest = d
+        index = i
+      }
+    })
+
+    // The click already snapped, so landing exactly on a vertex is what
+    // distinguishes "drag this corner" from "drag the whole object".
+    const onVertex = nearest < 1e-6
+
+    set({
+      moving: { id, index: onVertex ? index : null, grab: worldPoint, before: doc },
+      selection: id,
+    })
+  },
+
+  /** Update the move. `point` is the inferred target, so moves snap. */
+  updateMove: (point) => {
+    const { moving } = get()
+    if (!moving) return
+
+    const next =
+      moving.index !== null
+        ? moveVertex(moving.before, moving.id, moving.index, point)
+        : translateNode(moving.before, moving.id, {
+            x: point.x - moving.grab.x,
+            y: point.y - moving.grab.y,
+            z: (point.z ?? 0) - (moving.grab.z ?? 0),
+          })
+
+    // Live preview; history is written once, on release.
+    set({ doc: next })
+  },
+
+  endMove: () => {
+    const { moving, doc, past } = get()
+    if (!moving) return
+    set({ moving: null })
+
+    if (doc === moving.before) return // never actually moved
+
+    saveDocument(doc)
+    set({ past: [...past, moving.before], future: [] })
   },
 
   /** Edit one parameter of the selected node. */

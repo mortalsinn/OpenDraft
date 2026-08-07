@@ -28,6 +28,7 @@ export default function App() {
           {[
             ['line', 'Line'],
             ['select', 'Select'],
+            ['move', 'Move'],
             ['pushpull', 'Push/Pull'],
             ['dimension', 'Dimension'],
             ['note', 'Note'],
@@ -85,6 +86,8 @@ export default function App() {
             {tool === 'line' &&
               'Click to draw · type a length · Enter · Esc cancels · arrows lock an axis'}
             {tool === 'select' && 'Click a line to select it, then edit or promote it on the right'}
+            {tool === 'move' &&
+              'Drag a corner to move it, or anywhere else on an object to move the whole thing'}
             {tool === 'pushpull' &&
               'Select something first, then drag up or down · type a size and press Enter'}
             {tool === 'dimension' &&

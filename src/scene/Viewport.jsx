@@ -106,35 +106,49 @@ function PointerBridge() {
 
       const cursor = toWorld(event)
       if (!cursor) return
-      state.setSnap(
-        infer({
-          cursor,
-          segments: listSegments(state.doc),
-          anchor: state.anchor,
-          worldPerPixel: worldPerPixel(),
-          gridStep: state.gridStep,
-          lockedAxis: state.lockedAxis,
-        }),
-      )
+
+      const snap = infer({
+        cursor,
+        // While moving, the object being dragged is excluded from inference —
+        // otherwise it snaps to its own vertices and sticks to where it was.
+        segments: listSegments(state.doc).filter((s) => s.id !== state.moving?.id),
+        anchor: state.anchor,
+        worldPerPixel: worldPerPixel(),
+        gridStep: state.gridStep,
+        lockedAxis: state.lockedAxis,
+      })
+
+      state.setSnap(snap)
+      // Moves run through the inference engine, so dragging a corner onto
+      // another corner lands exactly on it.
+      if (state.moving) state.updateMove(snap.point)
     }
 
     const onPointerDown = (event) => {
       const state = useDraft.getState()
-      if (state.tool !== 'pushpull' || !state.selection) return
-      state.beginPushPull(event.clientY)
+
+      if (state.tool === 'pushpull' && state.selection) {
+        state.beginPushPull(event.clientY)
+        return
+      }
+
+      if (state.tool === 'move' && state.snap) {
+        state.beginMove(state.snap.point, state.snap.refs)
+      }
     }
 
     const onPointerUp = () => {
       const state = useDraft.getState()
       if (state.pushPull) state.endPushPull()
+      if (state.moving) state.endMove()
     }
 
     const onClick = (event) => {
       // Ignore the click that ends an orbit/pan drag.
       if (event.detail === 0) return
       const state = useDraft.getState()
-      // A click that finished a push/pull must not also place a point.
-      if (state.tool === 'pushpull') return
+      // A click that finished a drag must not also place a point.
+      if (state.tool === 'pushpull' || state.tool === 'move') return
       if (state.snap) state.clickPoint(state.snap.point, state.snap.refs)
     }
 
